@@ -13,30 +13,12 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Face
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -44,15 +26,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavHostController
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.example.eyesai.ui.components.Navigator
 import com.example.eyesai.ui.theme.EyesAiTheme
 
 enum class AppScreen(@StringRes val title: Int) {
@@ -66,9 +44,11 @@ enum class AppScreen(@StringRes val title: Int) {
 class MainActivity : ComponentActivity(), RecognitionListener {
     private val requiredPermissions = arrayOf(
         Manifest.permission.READ_EXTERNAL_STORAGE,
+        Manifest.permission.WRITE_EXTERNAL_STORAGE,
         Manifest.permission.INTERNET,
         Manifest.permission.POST_NOTIFICATIONS,
         Manifest.permission.RECORD_AUDIO,
+        Manifest.permission.CAMERA
     )
 
     private val requestPermissionLauncher = registerForActivityResult(
@@ -80,6 +60,7 @@ class MainActivity : ComponentActivity(), RecognitionListener {
             Log.e("MainActivity", "Some permissions were denied: ${permission.filterValues { !it }}")
         }
     }
+
     private fun checkAndRequestPermissions() {
         val permissionsToRequest = requiredPermissions.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
@@ -205,26 +186,13 @@ class MainActivity : ComponentActivity(), RecognitionListener {
             Log.i("Recognized Text", recognizedText)
 
             // Handle navigation commands
-            when {
-                recognizedText.startsWith("navigate to", ignoreCase = true) -> {
-                    val command = recognizedText.lowercase()
-                    handleNavigation(command)
-                }
-                recognizedText.startsWith("go to", ignoreCase = true) -> {
-                    val command = recognizedText.lowercase()
-                    handleNavigation(command)
-                }
-                recognizedText.startsWith("open", ignoreCase = true) -> {
-                    val command = recognizedText.lowercase()
-                    handleNavigation(command)
-                }
-            }
+            processCommands(recognizedText)
         }
         startListening()
     }
 
     override fun onRmsChanged(rmsdB: Float) {
-        progressValue = rmsdB / 10f // Normalize the value for the progress indicator
+        progressValue = rmsdB / 10f
     }
 
     private fun getErrorText(errorCode: Int): String {
@@ -267,156 +235,23 @@ class MainActivity : ComponentActivity(), RecognitionListener {
             }
         }
     }
-}
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun AppBar(
-    modifier: Modifier = Modifier,
-    currentScreen: AppScreen = AppScreen.Home,
-    onNavigateBack: () -> Unit = {}
-) {
-    TopAppBar(
-        modifier = modifier,
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer,
-            titleContentColor = MaterialTheme.colorScheme.primary
-        ),
-        title = {
-            Text(text = stringResource(currentScreen.title))
-        },
-        navigationIcon = {
-            if (currentScreen != AppScreen.Home) {
-                IconButton(onClick = onNavigateBack) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Go Back"
-                    )
-                }
+    private fun processCommands(command: String) {
+        when {
+            command.startsWith("navigate to", ignoreCase = true) -> {
+                handleNavigation(command)
             }
-        }
-    )
-}
+            command.startsWith("go to", ignoreCase = true) -> {
+                handleNavigation(command)
+            }
+            command.startsWith("open", ignoreCase = true) -> {
+                handleNavigation(command)
+            }
+            command.contains("capture image", ignoreCase = true) -> {
 
-@Composable
-fun Navigator(
-    navController: NavHostController = rememberNavController()
-) {
-    val backStackEntry by navController.currentBackStackEntryAsState()
-    val currentScreen = AppScreen.valueOf(
-        backStackEntry?.destination?.route ?: AppScreen.Home.name
-    )
-
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        topBar = {
-            AppBar(
-                currentScreen = currentScreen,
-                onNavigateBack = { navController.navigateUp() }
-            )
-        },
-        bottomBar = {
-            NavigationBar {
-                NavigationBarItem(
-                    selected = currentScreen == AppScreen.Home,
-                    onClick = { navController.navigate(AppScreen.Home.name) },
-                    icon = { Icon(Icons.Filled.Home, contentDescription = "Home") },
-                    label = { Text(text = stringResource(AppScreen.Home.title)) }
-                )
-                NavigationBarItem(
-                    selected = currentScreen == AppScreen.Navigation,
-                    onClick = { navController.navigate(AppScreen.Navigation.name) },
-                    icon = { Icon(Icons.Default.LocationOn, contentDescription = "Navigation") },
-                    label = { Text(text = stringResource(AppScreen.Navigation.title)) }
-                )
-                NavigationBarItem(
-                    selected = currentScreen == AppScreen.Shop,
-                    onClick = { navController.navigate(AppScreen.Shop.name) },
-                    icon = { Icon(Icons.Filled.ShoppingCart, contentDescription = "Shop") },
-                    label = { Text(text = stringResource(AppScreen.Shop.title)) }
-                )
-                NavigationBarItem(
-                    selected = currentScreen == AppScreen.Describe,
-                    onClick = { navController.navigate(AppScreen.Describe.name) },
-                    icon = { Icon(Icons.Default.Face, contentDescription = "Describe") },
-                    label = { Text(text = stringResource(AppScreen.Describe.title)) }
-                )
-                NavigationBarItem(
-                    selected = currentScreen == AppScreen.Notes,
-                    onClick = { navController.navigate(AppScreen.Notes.name) },
-                    icon = { Icon(Icons.Filled.Add, contentDescription = "Notes") },
-                    label = { Text(text = stringResource(AppScreen.Notes.title)) }
-                )
-            }
-        }
-    ) { paddingValues ->
-        NavHost(
-            navController = navController,
-            startDestination = AppScreen.Home.name,
-            modifier = Modifier.padding(paddingValues)
-        ) {
-            composable(
-                AppScreen.Home.name,
-                enterTransition = { EnterTransition.None },
-                exitTransition = { ExitTransition.None }
-            ) {
-                HomeScreen(navController)
-            }
-            composable(
-                AppScreen.Shop.name,
-                enterTransition = { EnterTransition.None },
-                exitTransition = { ExitTransition.None }
-            ) {
-                ShoppingScreen(navController)
-            }
-            composable(
-                AppScreen.Describe.name,
-                enterTransition = { EnterTransition.None },
-                exitTransition = { ExitTransition.None }
-            ) {
-                CameraScreen(navController)
-            }
-            composable(
-                AppScreen.Navigation.name,
-                enterTransition = { EnterTransition.None },
-                exitTransition = { ExitTransition.None }
-            ) {
-                NavigationScreen(navController)
-            }
-            composable(
-                AppScreen.Notes.name,
-                enterTransition = { EnterTransition.None },
-                exitTransition = { ExitTransition.None }
-            ) {
-                NotesScreen(navController)
             }
         }
     }
-}
-
-@Composable
-fun HomeScreen(navController: NavHostController) {
-    ScreenTemplate(
-        title = "Home Screen",
-        description = "This is the home screen. Navigate to other features using the buttons.",
-        actions = listOf(
-            "Go to Camera" to { navController.navigate(AppScreen.Describe.name) },
-            "Go to Shopping" to { navController.navigate(AppScreen.Shop.name) },
-            "Go to Navigation" to { navController.navigate(AppScreen.Navigation.name) }
-        )
-    )
-}
-
-@Composable
-fun CameraScreen(navController: NavHostController) {
-    ScreenTemplate(
-        title = "Camera Screen",
-        description = "This is the camera screen. Use it to describe the scenery or take photos.",
-        actions = listOf(
-            "Go to Home" to { navController.navigate(AppScreen.Home.name) },
-            "Go to Shopping" to { navController.navigate(AppScreen.Shop.name) }
-        )
-    )
 }
 
 @Composable
