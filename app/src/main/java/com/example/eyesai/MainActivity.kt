@@ -1,17 +1,23 @@
 package com.example.eyesai
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
 import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -20,6 +26,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -28,10 +36,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
+import com.example.eyesai.ui.AppState
+import com.example.eyesai.ui.GeminiState
+import com.example.eyesai.ui.MainViewModel
 import com.example.eyesai.ui.components.Navigator
 import com.example.eyesai.ui.theme.EyesAiTheme
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.io.InputStream
 
 enum class AppScreen(@StringRes val title: Int) {
     Home(title = R.string.home),
@@ -42,6 +57,8 @@ enum class AppScreen(@StringRes val title: Int) {
 }
 
 class MainActivity : ComponentActivity(), RecognitionListener {
+    private val viewModel: MainViewModel by viewModels()
+    private var capturedImageUri: Uri? = null
     private val requiredPermissions = arrayOf(
         Manifest.permission.READ_EXTERNAL_STORAGE,
         Manifest.permission.WRITE_EXTERNAL_STORAGE,
@@ -83,6 +100,8 @@ class MainActivity : ComponentActivity(), RecognitionListener {
 
     private var navController: NavHostController? = null
 
+    private var shouldCaptureImage by mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -92,7 +111,59 @@ class MainActivity : ComponentActivity(), RecognitionListener {
             EyesAiTheme {
                 val navControllerInstance = rememberNavController()
                 navController = navControllerInstance
-                Navigator(navController = navController!!)
+
+                val appState by viewModel.state.collectAsState()
+                val geminiState by viewModel.geminiState.collectAsState()
+                val voiceCommandState by viewModel.isVoiceCommandActive.collectAsState()
+                val shouldCapture by viewModel.shouldCapture.collectAsState()
+                LaunchedEffect(appState) {
+                    when (appState) {
+                        is AppState.Error -> {
+                            // Handle error (e.g., show toast or speak error message)
+                            (appState as AppState.Error).error.let { error ->
+                                Toast.makeText(this@MainActivity, error, Toast.LENGTH_SHORT).show()
+                            }
+                        }
+
+                        is AppState.Success -> {
+                            // Handle success (e.g., speak success message)
+                            (appState as AppState.Success).message.let { message ->
+                                // You could implement TTS here
+                            }
+                        }
+
+                        else -> {} // Handle other states if needed
+                    }
+                }
+                LaunchedEffect(geminiState) {
+                    when (geminiState) {
+                        is GeminiState.Success -> {
+                            // Handle successful image description
+                            (geminiState as GeminiState.Success).response.let { response ->
+                                // You could implement TTS here for the description
+                            }
+                        }
+                        is GeminiState.Error -> {
+                            // Handle error
+                            Toast.makeText(
+                                this@MainActivity,
+                                (geminiState as GeminiState.Error).error,
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                        else -> {} // Handle other states if needed
+                    }
+                }
+                Navigator(
+                    navController = navController!!,
+                    onImageCaptured = { uri ->
+                        capturedImageUri = uri
+                        viewModel.storeUri(uri)
+                        // Convert URI to Bitmap and send to Gemini
+
+                    },
+                    isVoiceCommandActive = shouldCapture
+                )
             }
         }
     }
@@ -126,10 +197,12 @@ class MainActivity : ComponentActivity(), RecognitionListener {
     private fun startListening() {
         speech?.startListening(recognizerIntent)
         isListening = true
+        viewModel.updateVoicStatus(true)
     }
 
     override fun onResume() {
         super.onResume()
+        viewModel.updateVoicStatus(true)
         initializeSpeechRecognizer()
     }
 
@@ -137,11 +210,13 @@ class MainActivity : ComponentActivity(), RecognitionListener {
         super.onPause()
         speech?.stopListening()
         isListening = false
+        viewModel.updateVoicStatus(false)
     }
 
     override fun onDestroy() {
         super.onDestroy()
         speech?.destroy()
+        viewModel.updateVoicStatus(false)
     }
 
     override fun onBeginningOfSpeech() {
@@ -163,6 +238,7 @@ class MainActivity : ComponentActivity(), RecognitionListener {
         Log.i(TAG, "FAILED $errorMessage")
         errorText = errorMessage
         resetSpeechRecognizer()
+        viewModel.updateVoicStatus(false)
         startListening()
     }
 
@@ -187,6 +263,7 @@ class MainActivity : ComponentActivity(), RecognitionListener {
 
             // Handle navigation commands
             processCommands(recognizedText)
+
         }
         startListening()
     }
@@ -215,7 +292,8 @@ class MainActivity : ComponentActivity(), RecognitionListener {
             command.contains("home", ignoreCase = true) -> AppScreen.Home
             command.contains("shop", ignoreCase = true) -> AppScreen.Shop
             command.contains("camera", ignoreCase = true) ||
-            command.contains("describe", ignoreCase = true) -> AppScreen.Describe
+                    command.contains("describe", ignoreCase = true) -> AppScreen.Describe
+
             command.contains("navigation", ignoreCase = true) -> AppScreen.Navigation
             command.contains("notes", ignoreCase = true) -> AppScreen.Notes
             else -> null
@@ -247,10 +325,37 @@ class MainActivity : ComponentActivity(), RecognitionListener {
             command.startsWith("open", ignoreCase = true) -> {
                 handleNavigation(command)
             }
-            command.contains("capture image", ignoreCase = true) -> {
-
+            command.startsWith("vision ai", ignoreCase = true) -> {
+                val prompt = command.substringAfter("vision ai", "").trim()
+                if (navController?.currentDestination?.route == AppScreen.Describe.name) {
+                    viewModel.updateCaptureState(true)
+                    lifecycleScope.launch {
+                        delay(1000)
+                        viewModel.updateCaptureState(false)
+                    }
+                }
+                if (capturedImageUri != null) {
+                    capturedImageUri!!.toBitmap(this@MainActivity)?.let { bitmap ->
+                        viewModel.sendPrompt(
+                            bitmap,
+                            prompt
+                        )
+                    }
+                } else {
+                    Log.e(TAG, "No image captured yet.")
+                }
             }
         }
+    }
+}
+
+fun Uri.toBitmap(context: Context): Bitmap? {
+    return try {
+        val inputStream: InputStream? = context.contentResolver.openInputStream(this)
+        BitmapFactory.decodeStream(inputStream)
+    } catch (e: Exception) {
+        e.printStackTrace()
+        null
     }
 }
 

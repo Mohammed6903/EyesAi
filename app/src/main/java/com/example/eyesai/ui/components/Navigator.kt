@@ -1,5 +1,6 @@
 package com.example.eyesai.ui.components
 
+import android.net.Uri
 import android.util.Log
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -34,7 +35,9 @@ import com.example.eyesai.ui.screen.HomeScreen
 
 @Composable
 fun Navigator(
-    navController: NavHostController = rememberNavController()
+    navController: NavHostController = rememberNavController(),
+    onImageCaptured: (Uri) -> Unit,
+    isVoiceCommandActive: Boolean = false
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentScreen = AppScreen.valueOf(
@@ -108,7 +111,7 @@ fun Navigator(
                 enterTransition = { EnterTransition.None },
                 exitTransition = { ExitTransition.None }
             ) {
-                CameraPreviewScreen(onImageCaptured = { Log.i("Camerax", "Image successfully captured") }, onError = { Log.e("Camerax", "Error capturing image") })
+                CameraPreviewScreen(onImageCaptured = onImageCaptured , onError = { Log.e("Camerax", "Error capturing image") }, isVoiceCommandActive)
             }
             composable(
                 AppScreen.Navigation.name,

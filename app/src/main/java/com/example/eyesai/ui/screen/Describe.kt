@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.example.eyesai.ui.MainViewModel
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -30,7 +31,11 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
 @Composable
-fun CameraPreviewScreen(onImageCaptured: (Uri) -> Unit, onError: (ImageCaptureException) -> Unit) {
+fun CameraPreviewScreen(
+    onImageCaptured: (Uri) -> Unit,
+    onError: (ImageCaptureException) -> Unit,
+    isVoiceCommandActive: Boolean = false
+) {
     val lensFacing = CameraSelector.LENS_FACING_BACK
     val lifecycleOwner = LocalLifecycleOwner.current
     val context = LocalContext.current
@@ -60,9 +65,15 @@ fun CameraPreviewScreen(onImageCaptured: (Uri) -> Unit, onError: (ImageCaptureEx
         preview.setSurfaceProvider(previewView.surfaceProvider)
     }
 
+    // Monitor voice command state and trigger capture
+    LaunchedEffect(isVoiceCommandActive) {
+        if (isVoiceCommandActive) {
+            captureImage(context, imageCapture, onImageCaptured, onError)
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
-
         Button(
             onClick = {
                 captureImage(context, imageCapture, onImageCaptured, onError)
@@ -77,7 +88,7 @@ fun CameraPreviewScreen(onImageCaptured: (Uri) -> Unit, onError: (ImageCaptureEx
 private fun captureImage(
     context: Context,
     imageCapture: ImageCapture,
-    onImageCaptured: (Uri) -> Unit,
+    saveUri: (Uri) -> Unit,
     onError: (ImageCaptureException) -> Unit
 ) {
     Log.d("CameraX", "Starting image capture")
@@ -97,7 +108,7 @@ private fun captureImage(
                 override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
                     val savedUri = Uri.fromFile(photoFile)
                     Log.d("CameraX", "Image saved to: $savedUri")
-                    onImageCaptured(savedUri)
+                    saveUri(savedUri)
                 }
 
                 override fun onError(exception: ImageCaptureException) {

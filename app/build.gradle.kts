@@ -1,7 +1,18 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
 }
+
+val localProps = Properties()
+val localPropertiesFile = File(rootDir,"ai.properties")
+if (localPropertiesFile.exists() && localPropertiesFile.isFile){
+    localPropertiesFile.inputStream().use {
+        localProps.load(it)
+    }
+}
+
 
 android {
     namespace = "com.example.eyesai"
@@ -27,6 +38,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            buildConfigField("String", "GEMINI_API_KEY", localProps.getProperty("API_KEY"))
+        }
+        debug {
+            buildConfigField("String", "GEMINI_API_KEY", localProps.getProperty("API_KEY"))
         }
     }
     compileOptions {
@@ -38,6 +53,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.1"
@@ -73,6 +89,7 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
+    implementation(libs.androidx.benchmark.common)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -82,4 +99,5 @@ dependencies {
     debugImplementation(libs.androidx.ui.test.manifest)
 
     implementation(libs.generativeai)
+    implementation(kotlin("script-runtime"))
 }
