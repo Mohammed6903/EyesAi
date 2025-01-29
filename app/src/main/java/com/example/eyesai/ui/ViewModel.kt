@@ -60,7 +60,7 @@ class MainViewModel : ViewModel() {
 
     // Gemini Model
     private val generativeModel = GenerativeModel(
-        modelName = "gemini-pro-vision",
+        modelName = "gemini-1.5-flash-8b",
         apiKey = BuildConfig.GEMINI_API_KEY
     )
 
@@ -146,7 +146,7 @@ class MainViewModel : ViewModel() {
     // Function to send an image and prompt to Gemini AI
     fun sendPrompt(bitmap: Bitmap, prompt: String) {
         _geminiState.value = GeminiState.Loading
-
+        Log.i("prompt", "In prompt function")
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val response = generativeModel.generateContent(

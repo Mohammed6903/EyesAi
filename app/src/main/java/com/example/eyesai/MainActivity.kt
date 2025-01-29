@@ -141,6 +141,7 @@ class MainActivity : ComponentActivity(), RecognitionListener {
                             // Handle successful image description
                             (geminiState as GeminiState.Success).response.let { response ->
                                 // You could implement TTS here for the description
+                                Log.d("VisionOutput", (geminiState as GeminiState.Success).response )
                             }
                         }
                         is GeminiState.Error -> {
@@ -150,6 +151,7 @@ class MainActivity : ComponentActivity(), RecognitionListener {
                                 (geminiState as GeminiState.Error).error,
                                 Toast.LENGTH_SHORT
                             ).show()
+                            Log.d("ErrorVision", (geminiState as GeminiState.Error).error )
                         }
                         else -> {} // Handle other states if needed
                     }
@@ -325,8 +327,9 @@ class MainActivity : ComponentActivity(), RecognitionListener {
             command.startsWith("open", ignoreCase = true) -> {
                 handleNavigation(command)
             }
-            command.startsWith("vision ai", ignoreCase = true) -> {
-                val prompt = command.substringAfter("vision ai", "").trim()
+            command.startsWith("please describe", ignoreCase = true) -> {
+                val prompt = command.substringAfter("please describe", "").trim()
+                Log.d("Prompt", prompt)
                 if (navController?.currentDestination?.route == AppScreen.Describe.name) {
                     viewModel.updateCaptureState(true)
                     lifecycleScope.launch {
