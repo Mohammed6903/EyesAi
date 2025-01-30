@@ -98,6 +98,12 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 
+    // BarCode Scanner
+    implementation(libs.barcode.scanning)
+
+    // OCR
+    implementation(libs.text.recognition)
+
     implementation(libs.generativeai)
     implementation(kotlin("script-runtime"))
 }

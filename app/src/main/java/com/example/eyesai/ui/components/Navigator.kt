@@ -34,6 +34,7 @@ import com.example.eyesai.ShoppingScreen
 import com.example.eyesai.ui.ScreenType
 import com.example.eyesai.ui.screen.CameraPreviewScreen
 import com.example.eyesai.ui.screen.HomeScreen
+import com.example.eyesai.ui.screen.ShopScreen
 
 @Composable
 fun Navigator(
@@ -111,7 +112,8 @@ fun Navigator(
                 enterTransition = { EnterTransition.None },
                 exitTransition = { ExitTransition.None }
             ) {
-                ShoppingScreen(navController)
+//                ShoppingScreen(navController)
+                ShopScreen()
             }
             composable(
                 AppScreen.Describe.name,

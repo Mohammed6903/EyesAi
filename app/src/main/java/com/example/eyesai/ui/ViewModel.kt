@@ -228,7 +228,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application), T
                 speak(successMsg)
                 _state.value = AppState.Success(successMsg)
             }
-        }   else if (_geminiState.value is GeminiState.Error)   {
+        } else if (_geminiState.value is GeminiState.Error)   {
             val errorMsg = "No image captured. Please try again."
             speak(errorMsg)
             Log.i("GEMINIError", (_geminiState.value as GeminiState.Error).error)
@@ -272,7 +272,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application), T
                 response.text?.let { outputContent ->
                     _geminiState.value = GeminiState.Success(outputContent)
                     speak(outputContent)
-                    Log.d("VisionOutput", outputContent)
                 } ?: run {
                     val errorMsg = "Empty response from Gemini AI"
                     _geminiState.value = GeminiState.Error(errorMsg)
@@ -289,7 +288,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application), T
         _geminiState.value = GeminiState.File(uri)
     }
 
-    fun updateVoicStatus(active: Boolean){
+    fun updateVoiceStatus(active: Boolean){
         _isVoiceCommandActive.value = active
     }
 

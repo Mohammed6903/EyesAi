@@ -3,8 +3,6 @@ package com.example.eyesai
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
 import android.speech.RecognitionListener
@@ -46,7 +44,6 @@ import com.example.eyesai.ui.components.Navigator
 import com.example.eyesai.ui.theme.EyesAiTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.io.InputStream
 
 enum class AppScreen(@StringRes val title: Int) {
     Home(title = R.string.home),
@@ -225,12 +222,12 @@ class MainActivity : ComponentActivity(), RecognitionListener {
     private fun startListening() {
         speech?.startListening(recognizerIntent)
         isListening = true
-        viewModel.updateVoicStatus(true)
+        viewModel.updateVoiceStatus(true)
     }
 
     override fun onResume() {
         super.onResume()
-        viewModel.updateVoicStatus(true)
+        viewModel.updateVoiceStatus(true)
         initializeSpeechRecognizer()
     }
 
@@ -238,13 +235,13 @@ class MainActivity : ComponentActivity(), RecognitionListener {
         super.onPause()
         speech?.stopListening()
         isListening = false
-        viewModel.updateVoicStatus(false)
+        viewModel.updateVoiceStatus(false)
     }
 
     override fun onDestroy() {
         super.onDestroy()
         speech?.destroy()
-        viewModel.updateVoicStatus(false)
+        viewModel.updateVoiceStatus(false)
     }
 
     override fun onBeginningOfSpeech() {
@@ -277,7 +274,7 @@ class MainActivity : ComponentActivity(), RecognitionListener {
                 startListening()
             }
         }
-        viewModel.updateVoicStatus(false)
+        viewModel.updateVoiceStatus(false)
     }
 
     override fun onEvent(eventType: Int, params: Bundle?) {
