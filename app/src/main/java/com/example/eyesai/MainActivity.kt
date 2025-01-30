@@ -1,7 +1,6 @@
 package com.example.eyesai
 
 import android.Manifest
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -42,6 +41,7 @@ import androidx.navigation.compose.rememberNavController
 import com.example.eyesai.ui.AppState
 import com.example.eyesai.ui.GeminiState
 import com.example.eyesai.ui.MainViewModel
+import com.example.eyesai.ui.ScreenType
 import com.example.eyesai.ui.components.Navigator
 import com.example.eyesai.ui.theme.EyesAiTheme
 import kotlinx.coroutines.delay
@@ -70,11 +70,13 @@ class MainActivity : ComponentActivity(), RecognitionListener {
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) {
-            permission ->
+    ) { permission ->
         val allPermissionGranted = permission.entries.all { it.value }
         if (!allPermissionGranted) {
-            Log.e("MainActivity", "Some permissions were denied: ${permission.filterValues { !it }}")
+            Log.e(
+                "MainActivity",
+                "Some permissions were denied: ${permission.filterValues { !it }}"
+            )
         }
     }
 
@@ -116,6 +118,10 @@ class MainActivity : ComponentActivity(), RecognitionListener {
                 val geminiState by viewModel.geminiState.collectAsState()
                 val voiceCommandState by viewModel.isVoiceCommandActive.collectAsState()
                 val shouldCapture by viewModel.shouldCapture.collectAsState()
+
+                val updateScreenType: (ScreenType) -> Unit = { screenType ->
+                    viewModel.updateScreenType(screenType)
+                }
                 LaunchedEffect(appState) {
                     when (appState) {
                         is AppState.Error -> {
@@ -141,9 +147,10 @@ class MainActivity : ComponentActivity(), RecognitionListener {
                             // Handle successful image description
                             (geminiState as GeminiState.Success).response.let { response ->
                                 // You could implement TTS here for the description
-                                Log.d("VisionOutput", (geminiState as GeminiState.Success).response )
+                                Log.d("VisionOutput", (geminiState as GeminiState.Success).response)
                             }
                         }
+
                         is GeminiState.Error -> {
                             // Handle error
                             Toast.makeText(
@@ -151,8 +158,9 @@ class MainActivity : ComponentActivity(), RecognitionListener {
                                 (geminiState as GeminiState.Error).error,
                                 Toast.LENGTH_SHORT
                             ).show()
-                            Log.d("ErrorVision", (geminiState as GeminiState.Error).error )
+                            Log.d("ErrorVision", (geminiState as GeminiState.Error).error)
                         }
+
                         else -> {} // Handle other states if needed
                     }
                 }
@@ -161,9 +169,8 @@ class MainActivity : ComponentActivity(), RecognitionListener {
                     onImageCaptured = { uri ->
                         capturedImageUri = uri
                         viewModel.storeUri(uri)
-                        // Convert URI to Bitmap and send to Gemini
-
                     },
+                    updateScreenType = updateScreenType,
                     isVoiceCommandActive = shouldCapture
                 )
             }
@@ -171,19 +178,35 @@ class MainActivity : ComponentActivity(), RecognitionListener {
     }
 
     private fun initializeSpeechRecognizer() {
-        resetSpeechRecognizer()
-        setRecognizerIntent()
-        startListening()
+        if (SpeechRecognizer.isRecognitionAvailable(this)) {
+            resetSpeechRecognizer()
+            setRecognizerIntent()
+            startListening()
+        } else {
+            Log.e(TAG, "Speech recognition is not available")
+        }
     }
 
+//    private fun resetSpeechRecognizer() {
+//        speech?.destroy()
+//        speech = SpeechRecognizer.createSpeechRecognizer(this).apply {
+//            if (SpeechRecognizer.isRecognitionAvailable(this@MainActivity)) {
+//                setRecognitionListener(this@MainActivity)
+//            } else {
+//                Log.e(TAG, "Speech recognition is not available")
+//                finish()
+//            }
+//        }
+//    }
     private fun resetSpeechRecognizer() {
-        speech?.destroy()
-        speech = SpeechRecognizer.createSpeechRecognizer(this).apply {
-            if (SpeechRecognizer.isRecognitionAvailable(this@MainActivity)) {
-                setRecognitionListener(this@MainActivity)
-            } else {
-                Log.e(TAG, "Speech recognition is not available")
-                finish()
+        if (speech == null) {
+            speech = SpeechRecognizer.createSpeechRecognizer(this).apply {
+                if (SpeechRecognizer.isRecognitionAvailable(this@MainActivity)) {
+                    setRecognitionListener(this@MainActivity)
+                } else {
+                    Log.e(TAG, "Speech recognition is not available")
+                    finish()
+                }
             }
         }
     }
@@ -191,7 +214,10 @@ class MainActivity : ComponentActivity(), RecognitionListener {
     private fun setRecognizerIntent() {
         recognizerIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "en")
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(
+                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+            )
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
         }
     }
@@ -239,9 +265,19 @@ class MainActivity : ComponentActivity(), RecognitionListener {
         val errorMessage = getErrorText(errorCode)
         Log.i(TAG, "FAILED $errorMessage")
         errorText = errorMessage
-        resetSpeechRecognizer()
+        when (errorCode) {
+            SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> {
+                lifecycleScope.launch {
+                    delay(500)
+                    startListening()
+                }
+            }
+            else -> {
+                resetSpeechRecognizer()
+                startListening()
+            }
+        }
         viewModel.updateVoicStatus(false)
-        startListening()
     }
 
     override fun onEvent(eventType: Int, params: Bundle?) {
@@ -263,11 +299,12 @@ class MainActivity : ComponentActivity(), RecognitionListener {
             recognizedText = matches.joinToString("\n")
             Log.i("Recognized Text", recognizedText)
 
-            // Handle navigation commands
-            processCommands(recognizedText)
-
+            navController?.let { viewModel.handleVoiceCommand(recognizedText, it) }
         }
-        startListening()
+        lifecycleScope.launch {
+            delay(300)
+            startListening()
+        }
     }
 
     override fun onRmsChanged(rmsdB: Float) {
@@ -287,78 +324,6 @@ class MainActivity : ComponentActivity(), RecognitionListener {
             SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No speech input"
             else -> "Didn't understand, please try again."
         }
-    }
-
-    private fun handleNavigation(command: String) {
-        val destination = when {
-            command.contains("home", ignoreCase = true) -> AppScreen.Home
-            command.contains("shop", ignoreCase = true) -> AppScreen.Shop
-            command.contains("camera", ignoreCase = true) ||
-                    command.contains("describe", ignoreCase = true) -> AppScreen.Describe
-
-            command.contains("navigation", ignoreCase = true) -> AppScreen.Navigation
-            command.contains("notes", ignoreCase = true) -> AppScreen.Notes
-            else -> null
-        }
-
-        destination?.let { screen ->
-            navController?.navigate(screen.name) {
-                // Pop up to the start destination of the graph to
-                // avoid building up a large stack of destinations
-                popUpTo(AppScreen.Home.name) {
-                    saveState = true
-                }
-                // Avoid multiple copies of the same destination
-                launchSingleTop = true
-                // Restore state when reselecting a previously selected item
-                restoreState = true
-            }
-        }
-    }
-
-    private fun processCommands(command: String) {
-        when {
-            command.startsWith("navigate to", ignoreCase = true) -> {
-                handleNavigation(command)
-            }
-            command.startsWith("go to", ignoreCase = true) -> {
-                handleNavigation(command)
-            }
-            command.startsWith("open", ignoreCase = true) -> {
-                handleNavigation(command)
-            }
-            command.startsWith("please describe", ignoreCase = true) -> {
-                val prompt = command.substringAfter("please describe", "").trim()
-                Log.d("Prompt", prompt)
-                if (navController?.currentDestination?.route == AppScreen.Describe.name) {
-                    viewModel.updateCaptureState(true)
-                    lifecycleScope.launch {
-                        delay(1000)
-                        viewModel.updateCaptureState(false)
-                    }
-                }
-                if (capturedImageUri != null) {
-                    capturedImageUri!!.toBitmap(this@MainActivity)?.let { bitmap ->
-                        viewModel.sendPrompt(
-                            bitmap,
-                            prompt
-                        )
-                    }
-                } else {
-                    Log.e(TAG, "No image captured yet.")
-                }
-            }
-        }
-    }
-}
-
-fun Uri.toBitmap(context: Context): Bitmap? {
-    return try {
-        val inputStream: InputStream? = context.contentResolver.openInputStream(this)
-        BitmapFactory.decodeStream(inputStream)
-    } catch (e: Exception) {
-        e.printStackTrace()
-        null
     }
 }
 

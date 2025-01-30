@@ -18,6 +18,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -30,6 +31,7 @@ import com.example.eyesai.AppScreen
 import com.example.eyesai.NavigationScreen
 import com.example.eyesai.NotesScreen
 import com.example.eyesai.ShoppingScreen
+import com.example.eyesai.ui.ScreenType
 import com.example.eyesai.ui.screen.CameraPreviewScreen
 import com.example.eyesai.ui.screen.HomeScreen
 
@@ -37,12 +39,17 @@ import com.example.eyesai.ui.screen.HomeScreen
 fun Navigator(
     navController: NavHostController = rememberNavController(),
     onImageCaptured: (Uri) -> Unit,
+    updateScreenType: (screen:ScreenType) -> Unit,
     isVoiceCommandActive: Boolean = false
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentScreen = AppScreen.valueOf(
         backStackEntry?.destination?.route ?: AppScreen.Home.name
     )
+
+    LaunchedEffect(currentScreen) {
+        updateScreenType(ScreenType.valueOf(currentScreen.name))
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
