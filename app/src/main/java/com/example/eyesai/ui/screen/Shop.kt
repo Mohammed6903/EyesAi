@@ -121,31 +121,112 @@ fun CameraPreview(
 
 @OptIn(ExperimentalGetImage::class)
 private fun processImage(imageProxy: ImageProxy, context: android.content.Context) {
-    val mediaImage = imageProxy.image
-    if (mediaImage != null) {
+    try {
+        val mediaImage = imageProxy.image
+        if (mediaImage == null) {
+            Log.e("TextRecognition", "Failed to get media image")
+            imageProxy.close()
+            return
+        }
+
+        // Create input image once for both processes
         val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
 
-        // Initialize the barcode scanner
+        // Create a flag to track when both processes are complete
+        var textComplete = false
+        var barcodeComplete = false
+
+        // Function to close image proxy when both processes are done
+        fun tryCloseImageProxy() {
+            if (textComplete && barcodeComplete) {
+                try {
+                    imageProxy.close()
+                } catch (e: Exception) {
+                    Log.e("ImageProcessing", "Error closing image proxy", e)
+                }
+            }
+        }
+
+        // Text recognition process
+        val textRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        textRecognizer.process(image)
+            .addOnSuccessListener { visionText ->
+                runCatching {
+                    val recognizedText = visionText.text
+                    if (recognizedText.isNotEmpty()) {
+                        Log.d("TextRecognition", "Recognized text: $recognizedText")
+                        // Extract MRP only if text is found
+                        val mrpValue = extractMRPFromText(recognizedText)
+                        if (mrpValue != "MRP not found") {
+                            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                android.widget.Toast.makeText(
+                                    context,
+                                    "MRP: $mrpValue",
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                    }
+                }.onFailure { e ->
+                    Log.e("TextRecognition", "Error processing text result", e)
+                }
+            }
+            .addOnFailureListener { e ->
+                Log.e("TextRecognition", "Text recognition failed", e)
+            }
+            .addOnCompleteListener {
+                textComplete = true
+                tryCloseImageProxy()
+            }
+
+        // Barcode scanning process
         val options = BarcodeScannerOptions.Builder()
             .setBarcodeFormats(Barcode.FORMAT_ALL_FORMATS)
             .build()
         val barcodeScanner = BarcodeScanning.getClient(options)
 
-        // Process the image for barcodes
         barcodeScanner.process(image)
             .addOnSuccessListener { barcodes ->
-                for (barcode in barcodes) {
-                    val rawValue = barcode.rawValue
-                    Log.d("BarcodeScanner", "Barcode detected: $rawValue")
-                    // Show the barcode value (e.g., using a Toast or Snackbar)
-                    android.widget.Toast.makeText(context, "Barcode: $rawValue", android.widget.Toast.LENGTH_SHORT).show()
+                runCatching {
+                    for (barcode in barcodes) {
+                        val rawValue = barcode.rawValue
+                        if (!rawValue.isNullOrEmpty()) {
+                            Log.d("BarcodeScanner", "Barcode detected: $rawValue")
+                            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                android.widget.Toast.makeText(
+                                    context,
+                                    "Barcode: $rawValue",
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                    }
+                }.onFailure { e ->
+                    Log.e("BarcodeScanner", "Error processing barcode result", e)
                 }
             }
             .addOnFailureListener { e ->
                 Log.e("BarcodeScanner", "Barcode scanning failed", e)
             }
             .addOnCompleteListener {
-                imageProxy.close()
+                barcodeComplete = true
+                tryCloseImageProxy()
             }
+
+    } catch (e: Exception) {
+        Log.e("ImageProcessing", "Fatal error in image processing", e)
+        imageProxy.close()
     }
+}
+
+private fun extractMRPFromText(text: String): String {
+    val mrpPattern = Regex("Rs\\s*[:\\-]?\\s*(\\d+(?:\\.\\d{2})?)", RegexOption.IGNORE_CASE)
+    val mrpPattern2 = Regex("MRP\\s*[:\\-]?\\s*(\\d+(?:\\.\\d{2})?)", RegexOption.IGNORE_CASE)
+    val mrp: String?;
+    when {
+        mrpPattern.find(text)?.groupValues?.get(1) != null -> mrp = mrpPattern.find(text)?.groupValues?.get(1).toString()
+        mrpPattern2.find(text)?.groupValues?.get(1) != null -> mrp = mrpPattern2.find(text)?.groupValues?.get(1).toString()
+        else -> mrp = null
+    }
+    return mrp ?: "MRP not found"
 }
