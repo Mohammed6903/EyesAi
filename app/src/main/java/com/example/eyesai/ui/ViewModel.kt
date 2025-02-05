@@ -101,7 +101,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application), T
         }
     }
 
-    private fun speak(text: String) {
+    fun speak(text: String) {
         tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, null)
     }
 

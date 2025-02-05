@@ -31,7 +31,7 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
 @Composable
-fun CameraPreviewScreen(
+fun DescribeScreen(
     onImageCaptured: (Uri) -> Unit,
     onError: (ImageCaptureException) -> Unit,
     isVoiceCommandActive: Boolean = false

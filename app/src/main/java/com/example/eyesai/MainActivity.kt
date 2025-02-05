@@ -42,6 +42,7 @@ import com.example.eyesai.ui.MainViewModel
 import com.example.eyesai.ui.ScreenType
 import com.example.eyesai.ui.components.Navigator
 import com.example.eyesai.ui.theme.EyesAiTheme
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -53,6 +54,7 @@ enum class AppScreen(@StringRes val title: Int) {
     Notes(title = R.string.notes)
 }
 
+@AndroidEntryPoint
 class MainActivity : ComponentActivity(), RecognitionListener {
     private val viewModel: MainViewModel by viewModels()
     private var capturedImageUri: Uri? = null
@@ -168,7 +170,8 @@ class MainActivity : ComponentActivity(), RecognitionListener {
                         viewModel.storeUri(uri)
                     },
                     updateScreenType = updateScreenType,
-                    isVoiceCommandActive = shouldCapture
+                    isVoiceCommandActive = shouldCapture,
+                    speak = { text -> viewModel.speak(text) }
                 )
             }
         }
@@ -332,17 +335,6 @@ fun ShoppingScreen(navController: NavHostController) {
         actions = listOf(
             "Go to Home" to { navController.navigate(AppScreen.Home.name) },
             "Go to Camera" to { navController.navigate(AppScreen.Describe.name) }
-        )
-    )
-}
-
-@Composable
-fun NavigationScreen(navController: NavHostController) {
-    ScreenTemplate(
-        title = "Navigation Screen",
-        description = "This is the navigation screen. Start or stop navigation.",
-        actions = listOf(
-            "Go to Home" to { navController.navigate(AppScreen.Home.name) }
         )
     )
 }
