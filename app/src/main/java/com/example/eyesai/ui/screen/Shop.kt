@@ -21,15 +21,49 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import com.google.mlkit.vision.barcode.BarcodeScanner
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import java.util.concurrent.Executors
 import android.graphics.Bitmap
+import com.example.eyesai.service.RetrofitClient
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import retrofit2.Call
+import retrofit2.Callback
+import retrofit2.Response
+
+data class BarcodeLookupResponse(
+    val products: List<Product>
+)
+
+data class Product(
+    val barcode_number: String,
+    val title: String,
+    val category: String,
+    val manufacturer: String,
+    val brand: String,
+    val description: String,
+    val images: List<String>,
+    val features: List<String>,
+    val stores: List<Store>,
+    val reviews: List<Review>
+)
+
+data class Store(
+    val name: String,
+    val price: String,
+    val currency: String,
+    val link: String
+)
+
+data class Review(
+    val name: String,
+    val rating: String,
+    val title: String,
+    val review: String
+)
 
 @Composable
 fun ShopScreen() {
@@ -129,84 +163,45 @@ private fun processImage(imageProxy: ImageProxy, context: android.content.Contex
             return
         }
 
-        // Create input image once for both processes
         val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
-
-        // Create a flag to track when both processes are complete
         var textComplete = false
         var barcodeComplete = false
 
-        // Function to close image proxy when both processes are done
         fun tryCloseImageProxy() {
             if (textComplete && barcodeComplete) {
-                try {
-                    imageProxy.close()
-                } catch (e: Exception) {
-                    Log.e("ImageProcessing", "Error closing image proxy", e)
-                }
+                imageProxy.close()
             }
         }
 
-        // Text recognition process
+        // Text recognition
         val textRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
         textRecognizer.process(image)
             .addOnSuccessListener { visionText ->
-                runCatching {
-                    val recognizedText = visionText.text
-                    if (recognizedText.isNotEmpty()) {
-                        Log.d("TextRecognition", "Recognized text: $recognizedText")
-                        // Extract MRP only if text is found
-                        val mrpValue = extractMRPFromText(recognizedText)
-                        if (mrpValue != "MRP not found") {
-                            android.os.Handler(android.os.Looper.getMainLooper()).post {
-                                android.widget.Toast.makeText(
-                                    context,
-                                    "MRP: $mrpValue",
-                                    android.widget.Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                        }
+                val recognizedText = visionText.text
+                if (recognizedText.isNotEmpty()) {
+                    val mrpValue = extractMRPFromText(recognizedText)
+                    if (mrpValue != "MRP not found") {
+                        comparePriceWithBudget(mrpValue, context)
                     }
-                }.onFailure { e ->
-                    Log.e("TextRecognition", "Error processing text result", e)
+                    announceProductDescription(recognizedText, context)
+                    detectExpiryDate(recognizedText, context)
                 }
-            }
-            .addOnFailureListener { e ->
-                Log.e("TextRecognition", "Text recognition failed", e)
             }
             .addOnCompleteListener {
                 textComplete = true
                 tryCloseImageProxy()
             }
 
-        // Barcode scanning process
-        val options = BarcodeScannerOptions.Builder()
-            .setBarcodeFormats(Barcode.FORMAT_ALL_FORMATS)
-            .build()
-        val barcodeScanner = BarcodeScanning.getClient(options)
-
+        // Barcode scanning
+        val barcodeScanner = BarcodeScanning.getClient(BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_ALL_FORMATS).build())
         barcodeScanner.process(image)
             .addOnSuccessListener { barcodes ->
-                runCatching {
-                    for (barcode in barcodes) {
-                        val rawValue = barcode.rawValue
-                        if (!rawValue.isNullOrEmpty()) {
-                            Log.d("BarcodeScanner", "Barcode detected: $rawValue")
-                            android.os.Handler(android.os.Looper.getMainLooper()).post {
-                                android.widget.Toast.makeText(
-                                    context,
-                                    "Barcode: $rawValue",
-                                    android.widget.Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                        }
+                for (barcode in barcodes) {
+                    val rawValue = barcode.rawValue
+                    if (!rawValue.isNullOrEmpty()) {
+                        fetchProductDetails(rawValue, context)
                     }
-                }.onFailure { e ->
-                    Log.e("BarcodeScanner", "Error processing barcode result", e)
                 }
-            }
-            .addOnFailureListener { e ->
-                Log.e("BarcodeScanner", "Barcode scanning failed", e)
             }
             .addOnCompleteListener {
                 barcodeComplete = true
@@ -229,4 +224,124 @@ private fun extractMRPFromText(text: String): String {
         else -> mrp = null
     }
     return mrp ?: "MRP not found"
+}
+
+private fun announceProductDescription(text: String, context: android.content.Context) {
+    val description = extractProductDescription(text)
+    if (description.isNotEmpty()) {
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            android.widget.Toast.makeText(
+                context,
+                "Product Description: $description",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+}
+
+private fun extractProductDescription(text: String): String {
+    val keywords = listOf("ingredients", "contains", "description", "details")
+    val sentences = text.split(". ")
+    val description = sentences.filter { sentence ->
+        keywords.any { keyword ->
+            sentence.contains(keyword, ignoreCase = true)
+        }
+    }.joinToString(". ")
+    return if (description.isNotEmpty()) description else "No description found"
+}
+
+private fun comparePriceWithBudget(mrp: String, context: android.content.Context) {
+    val budget = 100.0
+    val price = mrp.replace("Rs", "").trim().toDoubleOrNull() ?: 0.0
+    if (price > budget) {
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            android.widget.Toast.makeText(
+                context,
+                "Price exceeds your budget of Rs $budget",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+        }
+    } else {
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            android.widget.Toast.makeText(
+                context,
+                "Price is within your budget",
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+}
+
+private fun fetchProductDetails(barcode: String, context: android.content.Context) {
+    val call = RetrofitClient.instance.getProductDetails(barcode)
+    call.enqueue(object : Callback<BarcodeLookupResponse> {
+        override fun onResponse(
+            call: Call<BarcodeLookupResponse>,
+            response: Response<BarcodeLookupResponse>
+        ) {
+            if (response.isSuccessful && response.body() != null) {
+                val product = response.body()!!.products.firstOrNull()
+                if (product != null) {
+                    announceProductDetails(product, context)
+                } else {
+                    android.widget.Toast.makeText(
+                        context,
+                        "No product details found",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+            } else {
+                android.widget.Toast.makeText(
+                    context,
+                    "Failed to fetch product details",
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+
+        override fun onFailure(call: Call<BarcodeLookupResponse>, t: Throwable) {
+            android.widget.Toast.makeText(
+                context,
+                "Network error: ${t.message}",
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
+    })
+}
+
+private fun announceProductDetails(product: Product, context: android.content.Context) {
+    val message = """
+        Product: ${product.title}
+        Brand: ${product.brand}
+        Description: ${product.description}
+        Features: ${product.features.joinToString(", ")}
+    """.trimIndent()
+
+    Log.d("barcode", message);
+
+    android.os.Handler(android.os.Looper.getMainLooper()).post {
+        android.widget.Toast.makeText(
+            context,
+            message,
+            android.widget.Toast.LENGTH_LONG
+        ).show()
+    }
+}
+
+private fun detectExpiryDate(text: String, context: android.content.Context) {
+    val expiryDate = extractExpiryDate(text)
+    if (expiryDate.isNotEmpty()) {
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            android.widget.Toast.makeText(
+                context,
+                "Expiry Date: $expiryDate",
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+}
+
+private fun extractExpiryDate(text: String): String {
+    val datePattern = Regex("\\b(\\d{2}[\\-/.]\\d{2}[\\-/.]\\d{4})\\b")
+    return datePattern.find(text)?.value ?: "Expiry date not found"
 }

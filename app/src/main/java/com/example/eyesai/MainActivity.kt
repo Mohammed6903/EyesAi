@@ -16,22 +16,12 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.annotation.StringRes
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavHostController
@@ -171,7 +161,8 @@ class MainActivity : ComponentActivity(), RecognitionListener {
                     },
                     updateScreenType = updateScreenType,
                     isVoiceCommandActive = shouldCapture,
-                    speak = { text -> viewModel.speak(text) }
+                    speak = { text -> viewModel.speak(text) },
+                    viewModel = viewModel
                 )
             }
         }
@@ -296,7 +287,7 @@ class MainActivity : ComponentActivity(), RecognitionListener {
     override fun onResults(results: Bundle?) {
         Log.i(TAG, "onResults")
         results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.let { matches ->
-            recognizedText = matches.joinToString("\n")
+            recognizedText = matches.first()
             Log.i("Recognized Text", recognizedText)
 
             navController?.let { viewModel.handleVoiceCommand(recognizedText, it) }
@@ -323,55 +314,6 @@ class MainActivity : ComponentActivity(), RecognitionListener {
             SpeechRecognizer.ERROR_SERVER -> "Error from server"
             SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No speech input"
             else -> "Didn't understand, please try again."
-        }
-    }
-}
-
-@Composable
-fun ShoppingScreen(navController: NavHostController) {
-    ScreenTemplate(
-        title = "Shopping Screen",
-        description = "This is the shopping screen. Add items to your shopping list or check out.",
-        actions = listOf(
-            "Go to Home" to { navController.navigate(AppScreen.Home.name) },
-            "Go to Camera" to { navController.navigate(AppScreen.Describe.name) }
-        )
-    )
-}
-
-@Composable
-fun NotesScreen(navController: NavHostController) {
-    ScreenTemplate(
-        title = "Notes Screen",
-        description = "This is the notes screen. Write and manage your notes here.",
-        actions = listOf(
-            "Go to Home" to { navController.navigate(AppScreen.Home.name) }
-        )
-    )
-}
-
-@Composable
-fun ScreenTemplate(
-    title: String,
-    description: String,
-    actions: List<Pair<String, () -> Unit>>
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text(text = title, modifier = Modifier.padding(bottom = 8.dp))
-        Text(text = description, modifier = Modifier.padding(bottom = 16.dp))
-        actions.forEach { (actionLabel, action) ->
-            Button(
-                onClick = action,
-                modifier = Modifier.padding(vertical = 4.dp)
-            ) {
-                Text(text = actionLabel)
-            }
         }
     }
 }

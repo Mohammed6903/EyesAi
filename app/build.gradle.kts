@@ -106,6 +106,7 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation(libs.androidx.benchmark.common)
+    implementation(libs.core)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -190,10 +191,15 @@ dependencies {
     // OCR
     implementation(libs.text.recognition)
 
+    // Levenshtein Distance
+    implementation(libs.commons.text)
+
     // Face Detection
     implementation(libs.face.detection)
     implementation(libs.androidx.appcompat)
-    implementation(libs.play.services.mlkit.face.detection)
+
+    // Object detection
+    implementation("com.google.mlkit:object-detection:17.0.2")
 
     // Tensorflow Lite
     implementation(libs.tensorflow.lite.task.vision)
@@ -203,6 +209,9 @@ dependencies {
     implementation("org.tensorflow:tensorflow-lite-metadata:0.4.3")
     implementation("org.tensorflow:tensorflow-lite-gpu:2.9.0")
     implementation("org.tensorflow:tensorflow-lite-gpu-delegate-plugin:0.4.0")
+
+    implementation(libs.retrofit)
+    implementation(libs.converter.gson)
 
     implementation(libs.generativeai)
     implementation(kotlin("script-runtime"))

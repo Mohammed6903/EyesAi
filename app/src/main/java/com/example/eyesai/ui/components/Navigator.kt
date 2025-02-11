@@ -28,12 +28,13 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.eyesai.AppScreen
-import com.example.eyesai.NotesScreen
+import com.example.eyesai.ui.MainViewModel
 import com.example.eyesai.ui.ScreenType
 import com.example.eyesai.ui.screen.DescribeScreen
 import com.example.eyesai.ui.screen.HomeScreen
 import com.example.eyesai.ui.screen.NavigationScreen
 import com.example.eyesai.ui.screen.ShopScreen
+import com.example.eyesai.ui.screen.NotesScreen
 
 @Composable
 fun Navigator(
@@ -41,7 +42,8 @@ fun Navigator(
     onImageCaptured: (Uri) -> Unit,
     updateScreenType: (screen:ScreenType) -> Unit,
     isVoiceCommandActive: Boolean = false,
-    speak: (String) -> Unit
+    speak: (String) -> Unit,
+    viewModel: MainViewModel
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentScreen = AppScreen.valueOf(
@@ -134,7 +136,7 @@ fun Navigator(
                 enterTransition = { EnterTransition.None },
                 exitTransition = { ExitTransition.None }
             ) {
-                NotesScreen(navController)
+                NotesScreen(navController, viewModel)
             }
         }
     }

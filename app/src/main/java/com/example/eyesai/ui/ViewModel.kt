@@ -19,6 +19,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import org.apache.commons.text.similarity.LevenshteinDistance
 import java.io.InputStream
 import java.util.Locale
 
@@ -32,7 +33,7 @@ sealed class AppState {
 
 // Define UI states for Gemini Vision task
 sealed class GeminiState {
-    object Idle : GeminiState()
+    data object Idle : GeminiState()
     object Loading : GeminiState()
     data class Success(val response: String) : GeminiState()
     data class Error(val error: String) : GeminiState()
@@ -46,6 +47,11 @@ enum class ScreenType(@StringRes val title: Int) {
     Shop(title = R.string.Shop),
     Describe(title = R.string.Describe),
     Notes(title = R.string.notes)
+}
+
+interface CommandHandler {
+    fun handleCommand(command: String, navController: NavHostController)
+    fun getCommands(): List<String>
 }
 
 class MainViewModel(application: Application) : AndroidViewModel(application), TextToSpeech.OnInitListener {
@@ -63,13 +69,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application), T
 
     private val _isVoiceCommandActive = MutableStateFlow(false)
     val isVoiceCommandActive: StateFlow<Boolean> = _isVoiceCommandActive.asStateFlow()
+
     private val _shouldCapture = MutableStateFlow(false)
     val shouldCapture: StateFlow<Boolean> = _shouldCapture.asStateFlow()
 
     private var tts: TextToSpeech = TextToSpeech(application.applicationContext, this)
 
-    // Voice command configurations for each screen
-    private val screenCommands = mutableMapOf<ScreenType, List<String>>()
+    private val _notes = MutableStateFlow<List<String>>(emptyList())
+    val notes: StateFlow<List<String>> = _notes.asStateFlow()
+
+    // Command handlers for each screen
+    private val commandHandlers = mutableMapOf<ScreenType, CommandHandler>()
 
     // Gemini Model
     private val generativeModel = GenerativeModel(
@@ -79,20 +89,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application), T
 
     private val contentResolver = application.contentResolver
 
-    fun uriToBitmap(uri: Uri): Bitmap? {
-        return try {
-            val inputStream: InputStream? = contentResolver.openInputStream(uri)
-            inputStream?.use {
-                BitmapFactory.decodeStream(it)
-            }
-        } catch (e: Exception) {
-            Log.e("MainViewModel", "Error converting URI to Bitmap: ${e.localizedMessage}")
-            null
-        }
+    init {
+        setupCommandHandlers()
     }
 
-    init {
-        setupDefaultVoiceCommands()
+    private fun setupCommandHandlers() {
+        commandHandlers[ScreenType.Home] = HomeCommandHandler()
+        commandHandlers[ScreenType.Describe] = DescribeCommandHandler()
+        commandHandlers[ScreenType.Shop] = ShopCommandHandler()
+        commandHandlers[ScreenType.Navigation] = NavigationCommandHandler()
+        commandHandlers[ScreenType.Notes] = NotesCommandHandler()
     }
 
     override fun onInit(status: Int) {
@@ -111,49 +117,193 @@ class MainViewModel(application: Application) : AndroidViewModel(application), T
         super.onCleared()
     }
 
-    // Function to setup default voice commands for each screen
-    private fun setupDefaultVoiceCommands() {
-        screenCommands[ScreenType.Home] = listOf("Navigate to camera", "Describe current screen", "Go to shopping")
-        screenCommands[ScreenType.Describe] = listOf("Describe scenery", "Capture photo", "Navigate to home")
-        screenCommands[ScreenType.Shop] = listOf("Add item to list", "View shopping cart", "Go to navigation")
-        screenCommands[ScreenType.Navigation] = listOf("Start navigation", "Stop navigation", "Return to home")
+    // Trie Node for storing commands
+    private class TrieNode {
+        val children = mutableMapOf<Char, TrieNode>()
+        var command: String? = null
     }
 
-    // Function to handle voice commands
+    // Build a Trie from the list of commands
+    private fun buildTrie(commands: List<String>): TrieNode {
+        val root = TrieNode()
+        for (command in commands) {
+            var node = root
+            for (char in command) {
+                node = node.children.getOrPut(char) { TrieNode() }
+            }
+            node.command = command
+        }
+        return root
+    }
+
+    // Search for the closest matching command using Trie and Levenshtein Distance
+    private fun findClosestMatch(input: String, trie: TrieNode): String? {
+        val levenshtein = LevenshteinDistance()
+        var closestMatch: String? = null
+        var minDistance = Int.MAX_VALUE
+
+        fun dfs(node: TrieNode, current: String) {
+            node.command?.let { command ->
+                val distance = levenshtein.apply(input.lowercase(), command.lowercase())
+                if (distance < minDistance) {
+                    minDistance = distance
+                    closestMatch = command
+                }
+            }
+            for ((char, child) in node.children) {
+                dfs(child, current + char)
+            }
+        }
+
+        dfs(trie, "")
+        return closestMatch
+    }
+
     fun handleVoiceCommand(command: String, navController: NavHostController) {
         viewModelScope.launch {
             _state.value = AppState.Loading
             _isVoiceCommandActive.value = true
             try {
-                val validCommands = screenCommands[screenType.value].orEmpty()
-                if (true) {
-                    when {
-                        command.startsWith("navigate to", ignoreCase = true) -> {
-                            handleNavigation(command, navController)
+                val handler = commandHandlers[screenType.value]
+                if (handler != null) {
+                    val lowerCaseCommand = command.lowercase()
+                    val parameterizedCommands = listOf("add note", "read notes", "delete note", "hey")
+
+                    if (parameterizedCommands.any { lowerCaseCommand.startsWith(it) }) {
+                        handler.handleCommand(command, navController)
+                        speak("Executing command.")
+                    } else {
+                        // Use Trie and Levenshtein for non-parameterized commands
+                        val trie = buildTrie(handler.getCommands())
+                        val closestMatch = findClosestMatch(command, trie)
+                        val distanceThreshold = 3 // Adjust tolerance level
+
+                        if (closestMatch != null &&
+                            LevenshteinDistance().apply(command, closestMatch) <= distanceThreshold) {
+                            handler.handleCommand(closestMatch, navController)
+                            speak("Executing: $closestMatch")
+                        } else {
+                            _state.value = AppState.Error("Invalid command: $command")
+                            speak("I didn't understand that command.")
                         }
-                        command.startsWith("go to", ignoreCase = true) -> {
-                            handleNavigation(command, navController)
-                        }
-                        command.startsWith("open", ignoreCase = true) -> {
-                            handleNavigation(command, navController)
-                        }
-                        command.startsWith("please describe", ignoreCase = true) -> {
-                            navController.currentDestination?.route?.let {
-                                describeScenery(command,
-                                    it
-                                )
-                            }
-                        }
-                        command.equals("describe current screen", true) -> describeCurrentScreen(screenType.value)
-                        else -> _state.value = AppState.Success("Command executed: $command")
                     }
                 } else {
-                    _state.value = AppState.Error("Invalid command: $command")
+                    _state.value = AppState.Error("No handler found for current screen.")
+                    speak("No handler found for current screen.")
                 }
             } catch (e: Exception) {
                 _state.value = AppState.Error("Command handling failed: ${e.message}")
+                speak("Error processing command.")
             }
         }
+    }
+
+    val navigationCommands = listOf(
+        "go to home", "go to shop", "go to describe", "go to notes", "go to navigation",
+        "navigate to home", "navigate to shop", "navigate to notes", "navigate to navigation", "navigate to describe",
+        "open home", "open shop", "open describe", "open notes", "open navigation"
+    )
+
+    private inner class HomeCommandHandler : CommandHandler {
+        override fun handleCommand(command: String, navController: NavHostController) {
+            val lowercaseCommand = command.lowercase()
+            extractScreenName(lowercaseCommand)?.let {
+                handleNavigation(it, navController)
+                return
+            }
+            when (lowercaseCommand) {
+                "help" -> describeCurrentScreen(ScreenType.Home)
+                else -> _state.value = AppState.Success("Command executed: $command")
+            }
+        }
+
+        override fun getCommands(): List<String> {
+            return navigationCommands + listOf("help")
+        }
+    }
+
+    private inner class DescribeCommandHandler : CommandHandler {
+        override fun handleCommand(command: String, navController: NavHostController) {
+            val lowercaseCommand = command.lowercase()
+            extractScreenName(lowercaseCommand)?.let {
+                handleNavigation(it, navController)
+                return
+            }
+            if (lowercaseCommand.startsWith("hey", ignoreCase = true)) {
+                describeScenery(command, AppScreen.Describe.name)
+            }
+        }
+
+        override fun getCommands(): List<String> {
+            return listOf("hey") + navigationCommands
+        }
+    }
+
+    private inner class ShopCommandHandler : CommandHandler {
+        override fun handleCommand(command: String, navController: NavHostController) {
+            val lowercaseCommand = command.lowercase()
+            extractScreenName(lowercaseCommand)?.let {
+                handleNavigation(it, navController)
+                return
+            }
+            when (lowercaseCommand) {
+                "add item to list", "add to shopping list" -> addItemToShoppingList()
+                "view shopping cart", "show cart", "check cart" -> viewShoppingCart()
+                else -> _state.value = AppState.Success("Command executed: $command")
+            }
+        }
+
+        override fun getCommands(): List<String> {
+            return listOf("add item to list", "view shopping cart") + navigationCommands
+        }
+    }
+
+    private inner class NavigationCommandHandler : CommandHandler {
+        override fun handleCommand(command: String, navController: NavHostController) {
+            val lowercaseCommand = command.lowercase()
+            extractScreenName(lowercaseCommand)?.let {
+                handleNavigation(it, navController)
+                return
+            }
+            when (lowercaseCommand) {
+                "start navigation", "begin route" -> startNavigation()
+                "stop navigation", "end navigation" -> stopNavigation()
+                else -> _state.value = AppState.Success("Command executed: $command")
+            }
+        }
+
+        override fun getCommands(): List<String> {
+            return listOf("start navigation", "stop navigation") + navigationCommands
+        }
+    }
+
+    private inner class NotesCommandHandler : CommandHandler {
+        override fun handleCommand(command: String, navController: NavHostController) {
+            val lowercaseCommand = command.lowercase()
+            extractScreenName(lowercaseCommand)?.let {
+                handleNavigation(it, navController)
+                return
+            }
+            handleNotesCommand(command)
+        }
+
+        override fun getCommands(): List<String> {
+            return listOf("add note", "read notes", "delete note") + navigationCommands
+        }
+    }
+
+    private val validScreens = listOf("describe", "shop", "notes", "home", "navigation")
+    private fun extractScreenName(command: String): String? {
+        if (command.startsWith("navigate to") ||
+            command.startsWith("open") ||
+            command.startsWith("go to")
+        ) {
+            val screenName = command.substringAfterLast(" ").trim()
+            if (screenName in validScreens) {
+                return screenName
+            }
+        }
+        return null
     }
 
     private fun handleNavigation(command: String, navController: NavHostController) {
@@ -164,25 +314,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application), T
                     command.contains("shop", ignoreCase = true) -> AppScreen.Shop
                     command.contains("camera", ignoreCase = true) ||
                             command.contains("describe", ignoreCase = true) -> AppScreen.Describe
-
                     command.contains("navigation", ignoreCase = true) -> AppScreen.Navigation
                     command.contains("notes", ignoreCase = true) -> AppScreen.Notes
                     else -> null
                 }
                 destination?.let { screen ->
                     navController.navigate(screen.name) {
-                        // Pop up to the start destination of the graph to
-                        // avoid building up a large stack of destinations
-                        popUpTo(AppScreen.Home.name) {
-                            saveState = true
-                        }
-                        // Avoid multiple copies of the same destination
+                        popUpTo(AppScreen.Home.name) { saveState = true }
                         launchSingleTop = true
-                        // Restore state when reselecting a previously selected item
                         restoreState = true
                     }
                 }
-                lateinit var message: String;
+                lateinit var message: String
                 if (destination != null) {
                     message = "Navigating to $destination"
                     _state.value = AppState.Success(message)
@@ -196,29 +339,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application), T
                 speak(errorMsg)
             }
         }
-
     }
 
-    // Function to describe the scenery (from camera)
     private fun describeScenery(command: String, route: String) {
-        val prompt = command.substringAfter("please describe", "").trim()
+        val prompt = command.substringAfter("hey", "").trim()
         Log.d("Prompt", prompt)
         if (route == AppScreen.Describe.name) {
             updateCaptureState(true)
             viewModelScope.launch {
-                // Wait for the image to be captured and stored
                 while (_geminiState.value !is GeminiState.File) {
-                    delay(500) // Polling interval
+                    delay(500)
                 }
                 updateCaptureState(false)
                 val instruction = """
-                    Describe this image for a blind person. Focus on essential details and spatial relationships.
-                    Keep in mind that your output should be directly usable for tts and avoid using markdown or any other syntax.
-                    Use only those symbols and punctuations which will likely improve the tts.
-                    Context from user: $prompt
+                    Answer the following question directly and concisely. Avoid any introductory phrases or filler words. 
+                    Provide the information in a way that is easy to understand when read aloud by a screen reader.
+                    User Query: $prompt
                 """.trimIndent()
-
-                // Process the captured image
                 val uri = (_geminiState.value as GeminiState.File).uri
                 val bitmap = uriToBitmap(uri)
                 if (bitmap != null) {
@@ -228,7 +365,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application), T
                 speak(successMsg)
                 _state.value = AppState.Success(successMsg)
             }
-        } else if (_geminiState.value is GeminiState.Error)   {
+        } else if (_geminiState.value is GeminiState.Error) {
             val errorMsg = "No image captured. Please try again."
             speak(errorMsg)
             Log.i("GEMINIError", (_geminiState.value as GeminiState.Error).error)
@@ -236,7 +373,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application), T
         }
     }
 
-    // Function to describe the current screen
     private fun describeCurrentScreen(screen: ScreenType) {
         viewModelScope.launch {
             try {
@@ -257,7 +393,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application), T
         }
     }
 
-    // Function to send an image and prompt to Gemini AI
     fun sendPrompt(bitmap: Bitmap, prompt: String) {
         _geminiState.value = GeminiState.Loading
         Log.i("prompt", "In prompt function")
@@ -284,15 +419,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application), T
         }
     }
 
-    fun storeUri(uri: Uri){
+    fun storeUri(uri: Uri) {
         _geminiState.value = GeminiState.File(uri)
     }
 
-    fun updateVoiceStatus(active: Boolean){
+    fun updateVoiceStatus(active: Boolean) {
         _isVoiceCommandActive.value = active
     }
 
-    fun updateCaptureState(active: Boolean){
+    fun updateCaptureState(active: Boolean) {
         _shouldCapture.value = active
     }
 
@@ -300,13 +435,75 @@ class MainViewModel(application: Application) : AndroidViewModel(application), T
         _screenType.value = screen
     }
 
-    // Function to add a new voice command for a specific screen
-    fun addVoiceCommand(screen: ScreenType, command: String) {
-        screenCommands[screen] = screenCommands[screen].orEmpty() + command
+    fun addNote(note: String) {
+        _notes.value += note
+        speak("Note added: $note")
     }
 
-    // Function to remove a voice command for a specific screen
-    fun removeVoiceCommand(screen: ScreenType, command: String) {
-        screenCommands[screen] = screenCommands[screen].orEmpty().filterNot { it == command }
+    fun deleteNote(note: String) {
+        _notes.value -= note
+        speak("Note deleted: $note")
+    }
+
+    fun readNotes() {
+        if (_notes.value.isEmpty()) {
+            speak("You have no notes.")
+        } else {
+            val notesText = _notes.value.joinToString("\n")
+            speak("Your notes: $notesText")
+        }
+    }
+
+    fun handleNotesCommand(command: String) {
+        when {
+            command.startsWith("add note", ignoreCase = true) -> {
+                val noteContent = command.substringAfter("add note").trim()
+                if (noteContent.isNotEmpty()) {
+                    addNote(noteContent)
+                } else {
+                    speak("Please provide note content.")
+                }
+            }
+            command.startsWith("read notes", ignoreCase = true) -> {
+                readNotes()
+            }
+            command.startsWith("delete note", ignoreCase = true) -> {
+                val noteIndex = command.substringAfter("delete note").trim().toIntOrNull()
+                if (noteIndex != null && noteIndex < _notes.value.size) {
+                    deleteNote(_notes.value[noteIndex])
+                } else {
+                    speak("Invalid note index.")
+                }
+            }
+            else -> speak("Invalid command for notes.")
+        }
+    }
+
+    private fun addItemToShoppingList() {
+        // Implement adding item to shopping list
+    }
+
+    private fun viewShoppingCart() {
+        // Implement viewing shopping cart
+    }
+
+    private fun startNavigation() {
+        // Implement starting navigation
+    }
+
+    private fun stopNavigation() {
+        // Implement stopping navigation
+    }
+
+    fun uriToBitmap(uri: Uri): Bitmap? {
+        return try {
+            val inputStream: InputStream? = contentResolver.openInputStream(uri)
+            inputStream?.use {
+                BitmapFactory.decodeStream(it)
+            }
+        } catch (e: Exception) {
+            Log.e("MainViewModel", "Error converting URI to Bitmap: ${e.localizedMessage}")
+            null
+        }
     }
 }
