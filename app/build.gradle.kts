@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.androidx.room)
     id("com.google.devtools.ksp")
     id("com.google.dagger.hilt.android")
+    id("de.undercouch.download") version "5.4.0"
 }
 
 val localProps = Properties()
@@ -78,6 +79,16 @@ android {
         }
     }
 }
+
+// import DownloadModels task
+project.extra.apply {
+    set("ASSET_DIR", project.projectDir.toString() + "/src/main/assets")
+    set("TEST_ASSETS_DIR", project.projectDir.toString() + "/src/androidTest/assets")
+}
+
+// Download default models; if you wish to use your own models then
+// place them in the "assets" directory and comment out this line.
+apply("download_models.gradle")
 
 dependencies {
     implementation(libs.hilt.android)
@@ -200,6 +211,7 @@ dependencies {
 
     // Object detection
     implementation("com.google.mlkit:object-detection:17.0.2")
+    implementation(libs.tasks.vision)
 
     // Tensorflow Lite
     implementation(libs.tensorflow.lite.task.vision)

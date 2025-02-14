@@ -199,6 +199,7 @@ private fun processImage(imageProxy: ImageProxy, context: android.content.Contex
                 for (barcode in barcodes) {
                     val rawValue = barcode.rawValue
                     if (!rawValue.isNullOrEmpty()) {
+                        Log.e("BarCode", rawValue)
                         fetchProductDetails(rawValue, context)
                     }
                 }

@@ -54,7 +54,8 @@ class MainActivity : ComponentActivity(), RecognitionListener {
         Manifest.permission.INTERNET,
         Manifest.permission.POST_NOTIFICATIONS,
         Manifest.permission.RECORD_AUDIO,
-        Manifest.permission.CAMERA
+        Manifest.permission.CAMERA,
+        Manifest.permission.MODIFY_AUDIO_SETTINGS
     )
 
     private val requestPermissionLauncher = registerForActivityResult(

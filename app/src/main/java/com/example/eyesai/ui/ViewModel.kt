@@ -15,6 +15,7 @@ import com.example.eyesai.BuildConfig
 import com.example.eyesai.R
 import com.google.ai.client.generativeai.GenerativeModel
 import com.google.ai.client.generativeai.type.content
+import com.google.ai.client.generativeai.type.generationConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
@@ -83,7 +84,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application), T
 
     // Gemini Model
     private val generativeModel = GenerativeModel(
-        modelName = "gemini-2.0-flash-exp",
+        modelName = "gemini-2.0-flash",
         apiKey = BuildConfig.GEMINI_API_KEY
     )
 
@@ -402,6 +403,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application), T
                     content {
                         image(bitmap)
                         text(prompt)
+                        generationConfig {  }
                     }
                 )
                 response.text?.let { outputContent ->

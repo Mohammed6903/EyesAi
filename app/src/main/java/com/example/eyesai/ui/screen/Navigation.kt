@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.graphics.ImageFormat
 import android.graphics.Matrix
 import android.graphics.Rect
+import android.graphics.RectF
 import android.graphics.YuvImage
 import android.util.Log
 import androidx.annotation.OptIn
@@ -23,20 +24,27 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.eyesai.ui.BoxWithText
-import com.example.eyesai.ui.FaceRecognitionViewModel
+import com.example.eyesai.ui.NavigationViewModel
 import java.io.ByteArrayOutputStream
+import kotlin.math.max
 
-@OptIn(ExperimentalGetImage::class)
 @Composable
 fun NavigationScreen() {
-    val viewModel: FaceRecognitionViewModel = hiltViewModel()
-    var detectedObjects by remember { mutableStateOf<List<BoxWithText>>(emptyList()) }
+    val navViewModel: NavigationViewModel = hiltViewModel()
+    val objectState = navViewModel.objectDetectionState.collectAsState()
+
+    // State to track the size of the PreviewView
+    var previewSize by remember { mutableStateOf(IntSize(0, 0)) }
+
+    // State to track the camera frame dimensions
+    var cameraFrameSize by remember { mutableStateOf(IntSize(0, 0)) }
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -44,83 +52,88 @@ fun NavigationScreen() {
     ) {
         Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(400.dp)
+                .fillMaxSize()
+                .onSizeChanged { size ->
+                    previewSize = IntSize(size.width, size.height)
+                }
         ) {
-            NavigationPreview(onObjectsDetected = { detectedObjects = it }, viewModel = viewModel)
-            detectedObjects.forEach { detection ->
-                ObjectDetectionBox(detection.box, detection.text)
-            }
-        }
-    }
-}
-
-@Composable
-fun ObjectDetectionBox(
-    rect: Rect,
-    label: String
-) {
-    var canvasSize by remember { mutableStateOf(androidx.compose.ui.geometry.Size.Zero) }
-
-    Canvas(
-        modifier = Modifier
-            .fillMaxSize()
-            .onSizeChanged { size ->
-                canvasSize = androidx.compose.ui.geometry.Size(
-                    size.width.toFloat(),
-                    size.height.toFloat()
-                )
-            }
-    ) {
-        if (canvasSize.width > 0 && canvasSize.height > 0 && rect.width() > 0 && rect.height() > 0) {
-            // Calculate scaling factors based on the original image dimensions
-            val scaleX = canvasSize.width / 640f  // YOLOv11 input size
-            val scaleY = canvasSize.height / 640f // YOLOv11 input size
-
-            // Calculate scaled coordinates
-            val scaledLeft = rect.left * scaleX
-            val scaledTop = rect.top * scaleY
-            val scaledWidth = rect.width() * scaleX
-            val scaledHeight = rect.height() * scaleY
-
-            // Draw detection box
-            drawRect(
-                color = Color.Red,
-                topLeft = Offset(scaledLeft, scaledTop),
-                size = androidx.compose.ui.geometry.Size(scaledWidth, scaledHeight),
-                style = Stroke(width = 4f)
+            NavigationPreview(
+                onFrameCaptured = { imageProxy ->
+                    // Update the camera frame dimensions dynamically
+                    cameraFrameSize = IntSize(imageProxy.width, imageProxy.height)
+                    navViewModel.processFrame(imageProxy)
+                }
             )
+            when (val state = objectState.value) {
+                is NavigationViewModel.ObjectDetectionState.Success -> {
+                    if (previewSize.width > 0 && previewSize.height > 0 && cameraFrameSize.width > 0 && cameraFrameSize.height > 0) {
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            // Calculate the scaling factor
+                            val scaleFactor = max(
+                                previewSize.width / cameraFrameSize.width.toFloat(),
+                                previewSize.height / cameraFrameSize.height.toFloat()
+                            )
 
-            // Calculate text background dimensions
-            val textBackgroundHeight = 40f
-            val textBackgroundWidth = (label.length * 20f).coerceAtLeast(100f)
+                            state.boxes.forEach { box ->
+                                // Scale the bounding box to match the PreviewView dimensions
+                                val scaledBox = RectF(
+                                    box.box.left * scaleFactor,
+                                    box.box.top * scaleFactor,
+                                    box.box.right * scaleFactor,
+                                    box.box.bottom * scaleFactor
+                                )
 
-            // Draw label background
-            drawRect(
-                color = Color.Red.copy(alpha = 0.3f),
-                topLeft = Offset(
-                    scaledLeft,
-                    (scaledTop - textBackgroundHeight).coerceAtLeast(0f)
-                ),
-                size = androidx.compose.ui.geometry.Size(
-                    textBackgroundWidth,
-                    textBackgroundHeight
-                )
-            )
+                                // Draw the bounding box
+                                drawRect(
+                                    color = Color.Red,
+                                    topLeft = Offset(scaledBox.left, scaledBox.top),
+                                    size = androidx.compose.ui.geometry.Size(
+                                        scaledBox.width(),
+                                        scaledBox.height()
+                                    ),
+                                    style = Stroke(width = 4f)
+                                )
 
-            // Draw label text
-            drawContext.canvas.nativeCanvas.apply {
-                drawText(
-                    label,
-                    scaledLeft + 10f,
-                    (scaledTop - textBackgroundHeight/4f).coerceAtLeast(textBackgroundHeight),
-                    android.graphics.Paint().apply {
-                        color = android.graphics.Color.WHITE
-                        textSize = 32f
-                        textAlign = android.graphics.Paint.Align.LEFT
-                        isFakeBoldText = true
+                                // Create text to display alongside detected objects
+                                val drawableText = box.text
+
+                                // Measure the text dimensions
+                                val textPaint = android.graphics.Paint().apply {
+                                    color = android.graphics.Color.RED
+                                    textSize = 30f
+                                }
+                                val bounds = android.graphics.Rect()
+                                textPaint.getTextBounds(drawableText, 0, drawableText.length, bounds)
+                                val textWidth = bounds.width()
+                                val textHeight = bounds.height()
+
+                                // Draw rect behind display text
+                                drawRect(
+                                    color = Color.Black.copy(alpha = 0.7f),
+                                    topLeft = Offset(scaledBox.left, scaledBox.top - textHeight - 8),
+                                    size = androidx.compose.ui.geometry.Size(
+                                        textWidth + 16f,
+                                        textHeight + 16f
+                                    )
+                                )
+
+                                // Draw the label text
+                                drawContext.canvas.nativeCanvas.drawText(
+                                    drawableText,
+                                    scaledBox.left + 8,
+                                    scaledBox.top - 8,
+                                    textPaint
+                                )
+                            }
+                        }
                     }
-                )
+                }
+                is NavigationViewModel.ObjectDetectionState.Error -> {
+                    Log.e("Error", "Error in object detection")
+                }
+                NavigationViewModel.ObjectDetectionState.Loading -> {
+                    Log.e("Loading", "Loading in object detection")
+                }
             }
         }
     }
@@ -129,8 +142,7 @@ fun ObjectDetectionBox(
 @OptIn(ExperimentalGetImage::class)
 @Composable
 fun NavigationPreview(
-    onObjectsDetected: (List<BoxWithText>) -> Unit,
-    viewModel: FaceRecognitionViewModel
+    onFrameCaptured: (ImageProxy) -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -154,20 +166,13 @@ fun NavigationPreview(
                 .build()
 
             imageAnalyzer.setAnalyzer(ContextCompat.getMainExecutor(ctx)) { imageProxy ->
-                val mediaImage = imageProxy.image
-                if (mediaImage != null) {
-                    val bitmap = imageProxy.toBitmapCustom(imageProxy.imageInfo.rotationDegrees)
-                    val detections = viewModel.detectObjectsYOLO(bitmap)
-                    onObjectsDetected(detections)
-                } else {
-                    Log.e("NavigationPreview", "MediaImage is null")
-                }
-                imageProxy.close()
+                onFrameCaptured(imageProxy)
             }
 
             try {
                 cameraProvider.unbindAll()
                 cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, imageAnalyzer)
+                Log.d("NavigationPreview", "Camera bound successfully")
             } catch (e: Exception) {
                 Log.e("NavigationPreview", "Camera binding failed: ${e.message}", e)
             }
@@ -179,16 +184,26 @@ fun NavigationPreview(
 }
 
 fun ImageProxy.toBitmapCustom(rotationDegrees: Int): Bitmap {
-    val planes = this.planes
-    val buffer = planes[0].buffer
-    val bytes = ByteArray(buffer.remaining())
-    buffer.get(bytes)
-    val yuvImage = YuvImage(bytes, ImageFormat.NV21, this.width, this.height, null)
+    val yBuffer = planes[0].buffer
+    val uBuffer = planes[1].buffer
+    val vBuffer = planes[2].buffer
+
+    val ySize = yBuffer.remaining()
+    val uSize = uBuffer.remaining()
+    val vSize = vBuffer.remaining()
+
+    val nv21 = ByteArray(ySize + uSize + vSize)
+
+    // U and V are swapped in ImageFormat.YUV_420_888
+    yBuffer.get(nv21, 0, ySize)
+    vBuffer.get(nv21, ySize, vSize)
+    uBuffer.get(nv21, ySize + vSize, uSize)
+
+    val yuvImage = YuvImage(nv21, ImageFormat.NV21, width, height, null)
     val out = ByteArrayOutputStream()
-    yuvImage.compressToJpeg(Rect(0, 0, this.width, this.height), 100, out)
-    val yuvBytes = out.toByteArray()
-    val yuvBitmap = BitmapFactory.decodeByteArray(yuvBytes, 0, yuvBytes.size)
-    return rotateBitmap(yuvBitmap, rotationDegrees)
+    yuvImage.compressToJpeg(Rect(0, 0, width, height), 100, out)
+    val imageBytes = out.toByteArray()
+    return BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
 }
 
 fun rotateBitmap(bitmap: Bitmap, degrees: Int): Bitmap {
