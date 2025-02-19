@@ -24,6 +24,7 @@ import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.task.vision.detector.Detection
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.concurrent.Executors
 import javax.inject.Inject
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -64,6 +65,8 @@ class NavigationViewModel @Inject constructor(
 
     private val _objectDetectionState = MutableStateFlow<ObjectDetectionState>(ObjectDetectionState.Loading)
     val objectDetectionState = _objectDetectionState.asStateFlow()
+
+    private val detectorDispatcher = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
 
     private lateinit var objectDetectorHelper: ObjectDetectorHelper
 
@@ -280,8 +283,8 @@ class NavigationViewModel @Inject constructor(
         objectDetectorHelper = ObjectDetectorHelper(
             threshold = 0.5f,
             numThreads = 2,
-            maxResults = 3,
-            currentDelegate = ObjectDetectorHelper.DELEGATE_CPU,
+            maxResults = 5,
+            currentDelegate = ObjectDetectorHelper.DELEGATE_GPU,
             currentModel = ObjectDetectorHelper.MODEL_EFFICIENTDETV2,
             context = context,
             objectDetectorListener = this
@@ -292,15 +295,16 @@ class NavigationViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val bitmap = imageProxy.toBitmap()
+                val rotation = imageProxy.imageInfo.rotationDegrees
 
+                // Process detection on the dedicated dispatcher
+                withContext(detectorDispatcher) {
+                    if (objectDetectorHelper.objectDetector == null) {
+                        objectDetectorHelper.setupObjectDetector()
+                    }
+                    objectDetectorHelper.detect(bitmap, rotation)
+                }
 
-                // Process both detections in parallel
-//                val faceJob = async { detectFaces(InputImage.fromBitmap(bitmap, 0), imageProxy) }
-                val objectJob = async { detectObjects(bitmap, imageProxy.imageInfo.rotationDegrees) }
-
-                // Wait for both to complete
-//                faceJob.await()
-                objectJob.await()
             } catch (e: Exception) {
                 Log.e(TAG, "Frame processing error", e)
             } finally {
@@ -345,8 +349,11 @@ class NavigationViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
+        // Cleanup resources
         faceDetector.close()
         tfLite?.close()
+        detectorDispatcher.close()
+        objectDetectorHelper.clearObjectDetector()
     }
 }
 

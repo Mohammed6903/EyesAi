@@ -24,13 +24,14 @@ class ObjectDetectorHelper(
 
     // For this example this needs to be a var so it can be reset on changes. If the ObjectDetector
     // will not change, a lazy val would be preferable.
-    private var objectDetector: ObjectDetector? = null
+    var objectDetector: ObjectDetector? = null
 
-    init {
-        setupObjectDetector()
-    }
+//    init {
+//        setupObjectDetector()
+//    }
 
     fun clearObjectDetector() {
+        objectDetector?.close()
         objectDetector = null
     }
 
@@ -58,6 +59,7 @@ class ObjectDetectorHelper(
                     baseOptionsBuilder.useGpu()
                 } else {
                     objectDetectorListener?.onError("GPU is not supported on this device")
+                    Log.d("GPU", "GPU not supported")
                 }
             }
             DELEGATE_NNAPI -> {
@@ -89,9 +91,6 @@ class ObjectDetectorHelper(
     }
 
     fun detect(image: Bitmap, imageRotation: Int) {
-        if (objectDetector == null) {
-            setupObjectDetector()
-        }
 
         // Inference time is the difference between the system time at the start and finish of the
         // process
@@ -107,6 +106,7 @@ class ObjectDetectorHelper(
 
         // Preprocess the image and convert it into a TensorImage for detection.
         val tensorImage = imageProcessor.process(TensorImage.fromBitmap(image))
+        Log.d("ObjectDetectorHelper", "Processed image dimensions: ${tensorImage.height}x${tensorImage.width}")
 
         val results = objectDetector?.detect(tensorImage)
         Log.d("Helper", results.toString())

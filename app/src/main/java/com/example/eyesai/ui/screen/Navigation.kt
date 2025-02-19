@@ -59,8 +59,11 @@ fun NavigationScreen() {
         ) {
             NavigationPreview(
                 onFrameCaptured = { imageProxy ->
-                    // Update the camera frame dimensions dynamically
-                    cameraFrameSize = IntSize(imageProxy.width, imageProxy.height)
+                    val rotationDegrees = imageProxy.imageInfo.rotationDegrees
+                    val isRotation90or270 = rotationDegrees % 180 == 90
+                    val frameWidth = if (isRotation90or270) imageProxy.height else imageProxy.width
+                    val frameHeight = if (isRotation90or270) imageProxy.width else imageProxy.height
+                    cameraFrameSize = IntSize(frameWidth, frameHeight)
                     navViewModel.processFrame(imageProxy)
                 }
             )
@@ -68,20 +71,29 @@ fun NavigationScreen() {
                 is NavigationViewModel.ObjectDetectionState.Success -> {
                     if (previewSize.width > 0 && previewSize.height > 0 && cameraFrameSize.width > 0 && cameraFrameSize.height > 0) {
                         Canvas(modifier = Modifier.fillMaxSize()) {
-                            // Calculate the scaling factor
                             val scaleFactor = max(
                                 previewSize.width / cameraFrameSize.width.toFloat(),
                                 previewSize.height / cameraFrameSize.height.toFloat()
                             )
 
+                            val scaledWidth = cameraFrameSize.width * scaleFactor
+                            val scaledHeight = cameraFrameSize.height * scaleFactor
+
+                            val offsetX = (scaledWidth - previewSize.width) / 2
+                            val offsetY = (scaledHeight - previewSize.height) / 2
+
                             state.boxes.forEach { box ->
-                                // Scale the bounding box to match the PreviewView dimensions
-                                val scaledBox = RectF(
-                                    box.box.left * scaleFactor,
-                                    box.box.top * scaleFactor,
-                                    box.box.right * scaleFactor,
-                                    box.box.bottom * scaleFactor
-                                )
+                                val scaledLeft = box.box.left * scaleFactor - offsetX
+                                val scaledTop = box.box.top * scaleFactor - offsetY
+                                val scaledRight = box.box.right * scaleFactor - offsetX
+                                val scaledBottom = box.box.bottom * scaleFactor - offsetY
+
+                                val clampedLeft = scaledLeft.coerceIn(0f, previewSize.width.toFloat())
+                                val clampedTop = scaledTop.coerceIn(0f, previewSize.height.toFloat())
+                                val clampedRight = scaledRight.coerceIn(0f, previewSize.width.toFloat())
+                                val clampedBottom = scaledBottom.coerceIn(0f, previewSize.height.toFloat())
+
+                                val scaledBox = RectF(clampedLeft, clampedTop, clampedRight, clampedBottom)
 
                                 // Draw the bounding box
                                 drawRect(
@@ -94,34 +106,25 @@ fun NavigationScreen() {
                                     style = Stroke(width = 4f)
                                 )
 
-                                // Create text to display alongside detected objects
+                                // Draw text background and label
                                 val drawableText = box.text
-
-                                // Measure the text dimensions
                                 val textPaint = android.graphics.Paint().apply {
                                     color = android.graphics.Color.RED
                                     textSize = 30f
                                 }
-                                val bounds = android.graphics.Rect()
-                                textPaint.getTextBounds(drawableText, 0, drawableText.length, bounds)
-                                val textWidth = bounds.width()
-                                val textHeight = bounds.height()
+                                val textBounds = android.graphics.Rect()
+                                textPaint.getTextBounds(drawableText, 0, drawableText.length, textBounds)
 
-                                // Draw rect behind display text
                                 drawRect(
                                     color = Color.Black.copy(alpha = 0.7f),
-                                    topLeft = Offset(scaledBox.left, scaledBox.top - textHeight - 8),
-                                    size = androidx.compose.ui.geometry.Size(
-                                        textWidth + 16f,
-                                        textHeight + 16f
-                                    )
+                                    topLeft = Offset(scaledBox.left, scaledBox.top - textBounds.height() - 8f),
+                                    size = androidx.compose.ui.geometry.Size(textBounds.width() + 16f, textBounds.height() + 16f)
                                 )
 
-                                // Draw the label text
                                 drawContext.canvas.nativeCanvas.drawText(
                                     drawableText,
-                                    scaledBox.left + 8,
-                                    scaledBox.top - 8,
+                                    scaledBox.left + 8f,
+                                    scaledBox.top - 8f,
                                     textPaint
                                 )
                             }
