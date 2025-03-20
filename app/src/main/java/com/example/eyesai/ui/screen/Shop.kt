@@ -27,6 +27,7 @@ import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import java.util.concurrent.Executors
 import android.graphics.Bitmap
+import android.net.Uri
 import com.example.eyesai.service.RetrofitClient
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
@@ -66,7 +67,7 @@ data class Review(
 )
 
 @Composable
-fun ShopScreen() {
+fun ShopScreen(onImageCaptured: (bitmap: Bitmap) -> Unit) {
     val context = LocalContext.current
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     var hasCameraPermission by remember {
@@ -94,6 +95,10 @@ fun ShopScreen() {
     if (hasCameraPermission) {
         CameraPreview { imageProxy ->
             processImage(imageProxy, context)
+            val bitmap = imageProxyToBitmap(imageProxy)
+            if (bitmap != null) {
+                onImageCaptured(bitmap)
+            }
         }
     } else {
         Text("Camera permission not granted")
@@ -339,6 +344,73 @@ private fun detectExpiryDate(text: String, context: android.content.Context) {
                 android.widget.Toast.LENGTH_SHORT
             ).show()
         }
+    }
+}
+
+@OptIn(androidx.camera.core.ExperimentalGetImage::class)
+private fun imageProxyToBitmap(imageProxy: ImageProxy): Bitmap? {
+    val mediaImage = imageProxy.image ?: return null
+
+    try {
+        // Create an InputImage from the ImageProxy
+        val inputImage = InputImage.fromMediaImage(
+            mediaImage,
+            imageProxy.imageInfo.rotationDegrees
+        )
+
+        // Getting the YUV_420_888 image format
+        val yBuffer = mediaImage.planes[0].buffer
+        val uBuffer = mediaImage.planes[1].buffer
+        val vBuffer = mediaImage.planes[2].buffer
+
+        val ySize = yBuffer.remaining()
+        val uSize = uBuffer.remaining()
+        val vSize = vBuffer.remaining()
+
+        val nv21 = ByteArray(ySize + uSize + vSize)
+
+        // U and V are swapped
+        yBuffer.get(nv21, 0, ySize)
+        vBuffer.get(nv21, ySize, vSize)
+        uBuffer.get(nv21, ySize + vSize, uSize)
+
+        val yuvImage = android.graphics.YuvImage(
+            nv21,
+            android.graphics.ImageFormat.NV21,
+            mediaImage.width,
+            mediaImage.height,
+            null
+        )
+
+        val out = java.io.ByteArrayOutputStream()
+        yuvImage.compressToJpeg(
+            android.graphics.Rect(0, 0, mediaImage.width, mediaImage.height),
+            100,
+            out
+        )
+
+        val imageBytes = out.toByteArray()
+        var bitmap = android.graphics.BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+
+        // Apply rotation if needed
+        if (imageProxy.imageInfo.rotationDegrees != 0) {
+            val matrix = android.graphics.Matrix()
+            matrix.postRotate(imageProxy.imageInfo.rotationDegrees.toFloat())
+            bitmap = Bitmap.createBitmap(
+                bitmap,
+                0,
+                0,
+                bitmap.width,
+                bitmap.height,
+                matrix,
+                true
+            )
+        }
+
+        return bitmap
+    } catch (e: Exception) {
+        Log.e("ImageConversion", "Failed to convert ImageProxy to Bitmap", e)
+        return null
     }
 }
 

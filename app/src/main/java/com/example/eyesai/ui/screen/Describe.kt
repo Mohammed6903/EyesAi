@@ -69,14 +69,6 @@ fun DescribeScreen(
 
     Box(modifier = Modifier.fillMaxSize()) {
         AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
-//        Button(
-//            onClick = {
-//                captureImage(context, imageCapture, onImageCaptured, onError)
-//            },
-//            modifier = Modifier.padding(16.dp)
-//        ) {
-//            Text(text = "Capture Image")
-//        }
     }
 }
 

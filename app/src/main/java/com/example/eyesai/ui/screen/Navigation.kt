@@ -25,13 +25,11 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.example.eyesai.ui.BoxWithText
-import com.example.eyesai.ui.NavigationViewModel
+import com.example.eyesai.viewModel.NavigationViewModel
 import java.io.ByteArrayOutputStream
 import kotlin.math.max
 

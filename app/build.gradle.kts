@@ -222,6 +222,8 @@ dependencies {
     implementation("org.tensorflow:tensorflow-lite-gpu:2.9.0")
     implementation("org.tensorflow:tensorflow-lite-gpu-delegate-plugin:0.4.0")
 
+    implementation(libs.itext7.core)
+
     implementation(libs.retrofit)
     implementation(libs.converter.gson)
 

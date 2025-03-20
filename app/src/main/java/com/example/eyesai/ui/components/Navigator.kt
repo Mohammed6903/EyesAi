@@ -1,5 +1,6 @@
 package com.example.eyesai.ui.components
 
+import android.graphics.Bitmap
 import android.net.Uri
 import android.util.Log
 import androidx.compose.animation.EnterTransition
@@ -28,8 +29,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.eyesai.AppScreen
-import com.example.eyesai.ui.MainViewModel
-import com.example.eyesai.ui.ScreenType
+import com.example.eyesai.viewModel.MainViewModel
+import com.example.eyesai.viewModel.ScreenType
 import com.example.eyesai.ui.screen.DescribeScreen
 import com.example.eyesai.ui.screen.HomeScreen
 import com.example.eyesai.ui.screen.NavigationScreen
@@ -40,7 +41,8 @@ import com.example.eyesai.ui.screen.NotesScreen
 fun Navigator(
     navController: NavHostController = rememberNavController(),
     onImageCaptured: (Uri) -> Unit,
-    updateScreenType: (screen:ScreenType) -> Unit,
+    onProductAnalysis: (bitmap: Bitmap) -> Unit,
+    updateScreenType: (screen: ScreenType) -> Unit,
     isVoiceCommandActive: Boolean = false,
     speak: (String) -> Unit,
     viewModel: MainViewModel
@@ -115,7 +117,7 @@ fun Navigator(
                 exitTransition = { ExitTransition.None }
             ) {
 //                ShoppingScreen(navController)
-                ShopScreen()
+                ShopScreen(onProductAnalysis)
             }
             composable(
                 AppScreen.Describe.name,

@@ -9,8 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
-import com.example.eyesai.ui.MainViewModel
-import com.example.eyesai.ui.components.AppBar
+import com.example.eyesai.viewModel.MainViewModel
 
 @Composable
 fun NotesScreen(

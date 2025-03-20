@@ -26,10 +26,10 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
-import com.example.eyesai.ui.AppState
-import com.example.eyesai.ui.GeminiState
-import com.example.eyesai.ui.MainViewModel
-import com.example.eyesai.ui.ScreenType
+import com.example.eyesai.viewModel.AppState
+import com.example.eyesai.viewModel.GeminiState
+import com.example.eyesai.viewModel.MainViewModel
+import com.example.eyesai.viewModel.ScreenType
 import com.example.eyesai.ui.components.Navigator
 import com.example.eyesai.ui.theme.EyesAiTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -55,7 +55,7 @@ class MainActivity : ComponentActivity(), RecognitionListener {
         Manifest.permission.POST_NOTIFICATIONS,
         Manifest.permission.RECORD_AUDIO,
         Manifest.permission.CAMERA,
-        Manifest.permission.MODIFY_AUDIO_SETTINGS
+        Manifest.permission.MODIFY_AUDIO_SETTINGS,
     )
 
     private val requestPermissionLauncher = registerForActivityResult(
@@ -92,8 +92,6 @@ class MainActivity : ComponentActivity(), RecognitionListener {
 
     private var navController: NavHostController? = null
 
-    private var shouldCaptureImage by mutableStateOf(false)
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -106,7 +104,6 @@ class MainActivity : ComponentActivity(), RecognitionListener {
 
                 val appState by viewModel.state.collectAsState()
                 val geminiState by viewModel.geminiState.collectAsState()
-                val voiceCommandState by viewModel.isVoiceCommandActive.collectAsState()
                 val shouldCapture by viewModel.shouldCapture.collectAsState()
 
                 val updateScreenType: (ScreenType) -> Unit = { screenType ->
@@ -163,7 +160,8 @@ class MainActivity : ComponentActivity(), RecognitionListener {
                     updateScreenType = updateScreenType,
                     isVoiceCommandActive = shouldCapture,
                     speak = { text -> viewModel.speak(text) },
-                    viewModel = viewModel
+                    viewModel = viewModel,
+                    onProductAnalysis = { bitmap -> viewModel.captureForMarketSurvey(bitmap) }
                 )
             }
         }
