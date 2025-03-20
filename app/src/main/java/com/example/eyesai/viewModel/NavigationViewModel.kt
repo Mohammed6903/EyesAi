@@ -11,10 +11,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.eyesai.database.helpers.StoredFace
 import com.example.eyesai.database.repository.FaceRepository
+import com.example.eyesai.helpers.ImageLabelerHelper
 import com.example.eyesai.helpers.ObjectDetectorHelper
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.face.FaceDetection
 import com.google.mlkit.vision.face.FaceDetectorOptions
+import com.google.mlkit.vision.label.ImageLabel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
@@ -34,7 +36,7 @@ import kotlin.math.sqrt
 class NavigationViewModel @Inject constructor(
     private val repository: FaceRepository,
     @ApplicationContext private val context: Context
-) : ViewModel(), ObjectDetectorHelper.DetectorListener {
+) : ViewModel(), ObjectDetectorHelper.DetectorListener, ImageLabelerHelper.LabelerListener {
 
     sealed class RecognitionState {
         object Loading : RecognitionState()
@@ -50,9 +52,17 @@ class NavigationViewModel @Inject constructor(
     }
 
     sealed class ObjectDetectionState {
-        object Loading : ObjectDetectionState()
-        data class Success(val boxes: List<BoxWithText>) : ObjectDetectionState()
+        data class Success(val detections: List<BoxWithText>, val inferenceTime: Long = 0) : ObjectDetectionState()
         data class Error(val message: String) : ObjectDetectionState()
+        object Loading : ObjectDetectionState()
+        object NoObjectsDetected : ObjectDetectionState()
+    }
+
+    sealed class ImageLabelsState {
+        data class Success(val labels: List<ImageLabel>, val inferenceTime: Long = 0) : ImageLabelsState()
+        data class Error(val message: String) : ImageLabelsState()
+        object Loading : ImageLabelsState()
+        object NoLabelsDetected : ImageLabelsState()
     }
 
     private val _recognitionState = MutableStateFlow<RecognitionState>(RecognitionState.Loading)
@@ -66,13 +76,17 @@ class NavigationViewModel @Inject constructor(
     private val _objectDetectionState = MutableStateFlow<ObjectDetectionState>(ObjectDetectionState.Loading)
     val objectDetectionState = _objectDetectionState.asStateFlow()
 
+    private lateinit var imageLabelerHelper: ImageLabelerHelper
+    private val _imageLabelsState = MutableStateFlow<ImageLabelsState>(ImageLabelsState.Loading)
+    val imageLabelsState = _imageLabelsState.asStateFlow()
+
     private val detectorDispatcher = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
 
     private lateinit var objectDetectorHelper: ObjectDetectorHelper
 
     init {
         loadTFLiteModel()
-        setupObjectDetector()
+        setupDetectors()
     }
 
     suspend fun detectFaces(image: InputImage, imageProxy: ImageProxy): List<Rect> {
@@ -283,34 +297,65 @@ class NavigationViewModel @Inject constructor(
         repository.deleteAllFaces()
     }
 
-    private fun setupObjectDetector() {
+    private fun setupDetectors() {
         objectDetectorHelper = ObjectDetectorHelper(
             threshold = 0.5f,
             numThreads = 2,
             maxResults = 3,
-            currentDelegate = ObjectDetectorHelper.DELEGATE_GPU,
+            currentDelegate = ObjectDetectorHelper.DELEGATE_CPU,
             currentModel = ObjectDetectorHelper.MODEL_EFFICIENTDETV2,
             context = context,
             objectDetectorListener = this
         )
+        objectDetectorHelper.setupObjectDetector()
+
+        imageLabelerHelper = ImageLabelerHelper(
+            confidenceThreshold = 0.7f,
+            maxResults = 5,
+            context = context,
+            imageLabelerListener = this
+        )
     }
 
+//    fun processFrame(imageProxy: ImageProxy) {
+//        viewModelScope.launch {
+//            try {
+//                val bitmap = imageProxy.toBitmap()
+//                val rotation = imageProxy.imageInfo.rotationDegrees
+//
+//                // Process detection on the dedicated dispatcher
+//                withContext(detectorDispatcher) {
+//                    if (objectDetectorHelper.objectDetector == null) {
+//                        objectDetectorHelper.setupObjectDetector()
+//                    }
+//                    objectDetectorHelper.detect(bitmap, rotation)
+//                }
+//
+//            } catch (e: Exception) {
+//                Log.e(TAG, "Frame processing error", e)
+//            } finally {
+//                imageProxy.close()
+//            }
+//        }
+//    }
     fun processFrame(imageProxy: ImageProxy) {
         viewModelScope.launch {
             try {
                 val bitmap = imageProxy.toBitmap()
                 val rotation = imageProxy.imageInfo.rotationDegrees
 
-                // Process detection on the dedicated dispatcher
+                // Run both detection tasks concurrently
                 withContext(detectorDispatcher) {
-                    if (objectDetectorHelper.objectDetector == null) {
-                        objectDetectorHelper.setupObjectDetector()
-                    }
+                    // Process object detection
                     objectDetectorHelper.detect(bitmap, rotation)
-                }
 
+                    // Process image labeling
+                    imageLabelerHelper.processImage(bitmap, rotation)
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Frame processing error", e)
+                _objectDetectionState.value = ObjectDetectionState.Error("Frame processing error: ${e.message}")
+                _imageLabelsState.value = ImageLabelsState.Error("Frame processing error: ${e.message}")
             } finally {
                 imageProxy.close()
             }
@@ -336,10 +381,26 @@ class NavigationViewModel @Inject constructor(
             val boxes = it.map { detection ->
                 BoxWithText(
                     box = detection.boundingBox.toRect(),
-                    text = detection.categories.firstOrNull()?.label ?: "Unknown"
+                    text = detection.categories.firstOrNull()?.label ?: "Unknown",
+                    confidence = detection.categories.firstOrNull()?.score ?: 0f
                 )
             }
-            _objectDetectionState.value = ObjectDetectionState.Success(boxes)
+            _objectDetectionState.value = ObjectDetectionState.Success(boxes, inferenceTime)
+        } ?: run {
+            _objectDetectionState.value = ObjectDetectionState.NoObjectsDetected
+        }
+    }
+
+    override fun onLabelResults(
+        labels: List<ImageLabel>,
+        inferenceTime: Long,
+        imageHeight: Int,
+        imageWidth: Int
+    ) {
+        if (labels.isNotEmpty()) {
+            _imageLabelsState.value = ImageLabelsState.Success(labels, inferenceTime)
+        } else {
+            _imageLabelsState.value = ImageLabelsState.NoLabelsDetected
         }
     }
 
@@ -358,7 +419,8 @@ class NavigationViewModel @Inject constructor(
         tfLite?.close()
         detectorDispatcher.close()
         objectDetectorHelper.clearObjectDetector()
+        imageLabelerHelper.clearImageLabeler()
     }
 }
 
-data class BoxWithText(val box: Rect, val text: String)
+data class BoxWithText(val box: Rect, val text: String, val confidence: Float)

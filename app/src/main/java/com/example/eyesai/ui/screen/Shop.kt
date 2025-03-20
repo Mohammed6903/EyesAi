@@ -234,15 +234,15 @@ private fun extractMRPFromText(text: String): String {
 
 private fun announceProductDescription(text: String, context: android.content.Context) {
     val description = extractProductDescription(text)
-    if (description.isNotEmpty()) {
-        android.os.Handler(android.os.Looper.getMainLooper()).post {
-            android.widget.Toast.makeText(
-                context,
-                "Product Description: $description",
-                android.widget.Toast.LENGTH_LONG
-            ).show()
-        }
-    }
+//    if (description.isNotEmpty()) {
+//        android.os.Handler(android.os.Looper.getMainLooper()).post {
+//            android.widget.Toast.makeText(
+//                context,
+//                "Product Description: $description",
+//                android.widget.Toast.LENGTH_LONG
+//            ).show()
+//        }
+//    }
 }
 
 private fun extractProductDescription(text: String): String {
@@ -260,21 +260,21 @@ private fun comparePriceWithBudget(mrp: String, context: android.content.Context
     val budget = 100.0
     val price = mrp.replace("Rs", "").trim().toDoubleOrNull() ?: 0.0
     if (price > budget) {
-        android.os.Handler(android.os.Looper.getMainLooper()).post {
-            android.widget.Toast.makeText(
-                context,
-                "Price exceeds your budget of Rs $budget",
-                android.widget.Toast.LENGTH_LONG
-            ).show()
-        }
+//        android.os.Handler(android.os.Looper.getMainLooper()).post {
+//            android.widget.Toast.makeText(
+//                context,
+//                "Price exceeds your budget of Rs $budget",
+//                android.widget.Toast.LENGTH_LONG
+//            ).show()
+//        }
     } else {
-        android.os.Handler(android.os.Looper.getMainLooper()).post {
-            android.widget.Toast.makeText(
-                context,
-                "Price is within your budget",
-                android.widget.Toast.LENGTH_SHORT
-            ).show()
-        }
+//        android.os.Handler(android.os.Looper.getMainLooper()).post {
+//            android.widget.Toast.makeText(
+//                context,
+//                "Price is within your budget",
+//                android.widget.Toast.LENGTH_SHORT
+//            ).show()
+//        }
     }
 }
 
@@ -290,18 +290,18 @@ private fun fetchProductDetails(barcode: String, context: android.content.Contex
                 if (product != null) {
                     announceProductDetails(product, context)
                 } else {
-                    android.widget.Toast.makeText(
-                        context,
-                        "No product details found",
-                        android.widget.Toast.LENGTH_SHORT
-                    ).show()
+//                    android.widget.Toast.makeText(
+//                        context,
+//                        "No product details found",
+//                        android.widget.Toast.LENGTH_SHORT
+//                    ).show()
                 }
             } else {
-                android.widget.Toast.makeText(
-                    context,
-                    "Failed to fetch product details",
-                    android.widget.Toast.LENGTH_SHORT
-                ).show()
+//                android.widget.Toast.makeText(
+//                    context,
+//                    "Failed to fetch product details",
+//                    android.widget.Toast.LENGTH_SHORT
+//                ).show()
             }
         }
 

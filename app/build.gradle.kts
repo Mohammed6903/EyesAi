@@ -211,6 +211,8 @@ dependencies {
 
     // Object detection
     implementation("com.google.mlkit:object-detection:17.0.2")
+    implementation("com.google.mlkit:image-labeling:17.0.9")
+
     implementation(libs.tasks.vision)
 
     // Tensorflow Lite

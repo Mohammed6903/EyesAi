@@ -959,20 +959,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application), T
         }
     }
 
-    // Helper function to get page number from destination
-//    private fun getPageNumberFromDestination(outline: PdfOutline, pdfDocument: ITextPdfDocument): Int {
-//        try {
-//            val destination = outline.destination
-//            if (destination is PdfExplicitDestination) {
-//                val pageReference = destination.getDestinationPage(pdfDocument)
-//                return pdfDocument.getPageNumber(pageReference)
-//            }
-//        } catch (e: Exception) {
-//            // Handle any errors
-//        }
-//        return 1 // Default to first page if page number can't be determined
-//    }
-
     // Function to provide accessibility-friendly description of a document
     fun getAccessibleDescription(document: PdfDocument): String {
         val pageInfo = if (document.pageCount > 0) {
@@ -989,60 +975,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application), T
         val indent = "  ".repeat(bookmark.level)
         return "$indent${bookmark.title} (Page ${bookmark.pageNumber})"
     }
-
-//    private fun searchPdfDocuments(query: String) {
-//        viewModelScope.launch {
-//            _state.value = AppState.Loading
-//
-//            try {
-//                // Check if we already have documents loaded
-//                if (_pdfDocuments.value.isNullOrEmpty()) {
-//                    // First time searching, load all documents
-//                    searchDocuments(query)
-//                    Log.d("ViewModel", "Searching Documents")
-//
-//                    // After loading, check if we found any documents
-//                    if (_pdfDocuments.value.isNullOrEmpty()) {
-//                        speak("No PDF documents found on your device.")
-//                        _state.value = AppState.Success("No PDF documents found")
-//                    } else {
-//                        // Found documents, check if any match the query
-//                        val matchingDocs = _pdfDocuments.value?.filter {
-//                            it.fileName.contains(query, ignoreCase = true)
-//                        }
-//
-//                        if (matchingDocs.isNullOrEmpty()) {
-//                            speak("No PDF documents found matching '$query'.")
-//                            _state.value = AppState.Success("No matching documents")
-//                        } else {
-//                            val message = "Found ${matchingDocs.size} PDF documents matching '$query'."
-//                            speak(message)
-//                            _state.value = AppState.Success(message)
-//                            listDocuments(matchingDocs)
-//                        }
-//                    }
-//                } else {
-//                    // We already have documents, filter based on query
-//                    val matchingDocs = _pdfDocuments.value?.filter {
-//                        it.fileName.contains(query, ignoreCase = true)
-//                    }
-//
-//                    if (matchingDocs.isNullOrEmpty()) {
-//                        speak("No PDF documents found matching '$query'.")
-//                        _state.value = AppState.Success("No matching documents")
-//                    } else {
-//                        val message = "Found ${matchingDocs.size} PDF documents matching '$query'."
-//                        speak(message)
-//                        _state.value = AppState.Success(message)
-//                        listDocuments(matchingDocs)
-//                    }
-//                }
-//            } catch (e: Exception) {
-//                _state.value = AppState.Error("Error searching documents: ${e.localizedMessage}")
-//                speak("Sorry, there was an error searching for documents.")
-//            }
-//        }
-//    }
 
     private fun handleDocumentSelection(command: String) {
         val documentName = command.substringAfter("select").trim().takeIf { it.isNotEmpty() }
