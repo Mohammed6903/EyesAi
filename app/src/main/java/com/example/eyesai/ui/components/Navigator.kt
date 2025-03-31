@@ -42,6 +42,7 @@ fun Navigator(
     navController: NavHostController = rememberNavController(),
     onImageCaptured: (Uri) -> Unit,
     onProductAnalysis: (bitmap: Bitmap) -> Unit,
+    onReceiptAnalysis: (bitmap: Bitmap) -> Unit,
     updateScreenType: (screen: ScreenType) -> Unit,
     isVoiceCommandActive: Boolean = false,
     speak: (String) -> Unit,
@@ -117,7 +118,7 @@ fun Navigator(
                 exitTransition = { ExitTransition.None }
             ) {
 //                ShoppingScreen(navController)
-                ShopScreen(onProductAnalysis)
+                ShopScreen(onProductAnalysis, onReceiptAnalysis)
             }
             composable(
                 AppScreen.Describe.name,

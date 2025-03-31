@@ -17,6 +17,9 @@ import com.example.eyesai.AppScreen
 import com.example.eyesai.BuildConfig
 import com.example.eyesai.R
 import com.example.eyesai.service.MarketSurveyResponse
+import com.example.eyesai.service.ReceiptAnalysisResponse
+import com.example.eyesai.service.ReceiptAnalysisService
+import com.example.eyesai.service.ReceiptWebSocketState
 import com.example.eyesai.service.WebSocketImageService
 import com.example.eyesai.service.WebSocketState
 import com.google.ai.client.generativeai.GenerativeModel
@@ -351,26 +354,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application), T
 
             when {
                 lowercaseCommand.contains("analyze product", true) ||
-                lowercaseCommand.contains("analyse product", true) ||
-                        lowercaseCommand == "scan product" ||
-                        lowercaseCommand == "market survey" -> {
+                lowercaseCommand == "scan product" ||
+                lowercaseCommand == "market survey" -> {
                     initiateProductAnalysis()
                 }
+                lowercaseCommand.contains("analyze bill", true) ||
+                lowercaseCommand == "scan receipt" ||
+                lowercaseCommand == "bill analysis" -> {
+                    initiateReceiptAnalysis()
+                }
                 lowercaseCommand == "add item to list" ||
-                        lowercaseCommand == "add to shopping list" -> {
+                lowercaseCommand == "add to shopping list" -> {
                     addItemToShoppingList()
                 }
                 lowercaseCommand == "view shopping cart" ||
-                        lowercaseCommand == "show cart" ||
+                lowercaseCommand == "show cart" ||
                         lowercaseCommand == "check cart" -> {
                     viewShoppingCart()
                 }
                 lowercaseCommand.contains("show market survey", true) ||
                         lowercaseCommand.contains("display survey results", true) -> {
-                        displayMarketSurveyResults()
+                    displayMarketSurveyResults()
+                }
+                lowercaseCommand.contains("show receipt details", true) ||
+                        lowercaseCommand.contains("display bill analysis", true) -> {
+                    displayReceiptDetails()
                 }
                 lowercaseCommand == "cancel market survey" -> {
                     cancelMarketSurvey()
+                }
+                lowercaseCommand == "cancel receipt analysis" -> {
+                    cancelReceiptAnalysis()
                 }
                 lowercaseCommand == "help" -> {
                     describeCurrentScreen(ScreenType.Shop)
@@ -387,11 +401,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application), T
                 "analyze product",
                 "scan product",
                 "market survey",
+                "analyze bill",
+                "scan receipt",
+                "bill analysis",
                 "add item to list",
                 "view shopping cart",
                 "show market survey",
                 "display survey results",
+                "show bill details",
+                "display bill analysis",
                 "cancel market survey",
+                "cancel bill analysis",
                 "help"
             ) + navigationCommands
         }
@@ -471,6 +491,94 @@ class MainViewModel(application: Application) : AndroidViewModel(application), T
             speak("Image captured. Analyzing product for market survey.")
             _state.value = AppState.Loading
             captureAndAnalyzeProduct(bitmap)
+        }
+    }
+
+    private val _shouldCaptureForReceiptAnalysis = MutableStateFlow(false)
+    private val _receiptAnalysisData = MutableStateFlow<ReceiptAnalysisResponse?>(null)
+    val receiptAnalysisData: StateFlow<ReceiptAnalysisResponse?> = _receiptAnalysisData.asStateFlow()
+
+    // Receipt analysis service
+    private val receiptAnalysisService = ReceiptAnalysisService()
+
+    private fun initiateReceiptAnalysis() {
+        speak("Please point your camera at the bill you want to analyze.")
+        _state.value = AppState.Loading
+        _shouldCaptureForReceiptAnalysis.value = true
+    }
+
+    private fun displayReceiptDetails() {
+        val receiptData = _receiptAnalysisData.value
+        if (receiptData != null) {
+            val summary = receiptAnalysisService.getAccessibleSummary(receiptData)
+            speak(summary)
+            Log.d("Results", summary)
+            _state.value = AppState.Success("Receipt analysis displayed")
+        } else {
+            speak("No bill analysis data available. Please scan a bill first.")
+            _state.value = AppState.Error("No bill analysis data available")
+        }
+    }
+
+    private fun cancelReceiptAnalysis() {
+        _shouldCaptureForReceiptAnalysis.value = false
+        speak("Receipt analysis canceled")
+        _state.value = AppState.Idle
+    }
+
+    // Function to capture and analyze bill
+    fun captureAndAnalyzeReceipt(bitmap: Bitmap) {
+        viewModelScope.launch {
+            try {
+                speak("Capturing image for bill analysis")
+                _state.value = AppState.Loading
+
+                // Connect to bill analysis service
+                receiptAnalysisService.connect()
+
+                // Send the bill image for analysis
+                receiptAnalysisService.analyzeReceipt(bitmap)
+
+                // Monitor the state of the bill analysis service
+                receiptAnalysisService.state.collect { state ->
+                    when (state) {
+                        is ReceiptWebSocketState.Success -> {
+                            _receiptAnalysisData.value = state.response
+                            val summary = receiptAnalysisService.getAccessibleSummary(state.response)
+                            speak("Receipt analysis complete. $summary")
+                            _state.value = AppState.Success("Receipt analysis complete")
+                        }
+                        is ReceiptWebSocketState.Error -> {
+                            speak("Error analyzing bill: ${state.message}")
+                            _state.value = AppState.Error("Error analyzing bill: ${state.message}")
+                        }
+                        is ReceiptWebSocketState.Processing -> {
+                            speak("Processing bill, please wait...")
+                            _state.value = AppState.Loading
+                        }
+                        is ReceiptWebSocketState.Disconnected -> {
+                            _state.value = AppState.Idle
+                        }
+                        else -> {} // Handle other states if needed
+                    }
+                }
+
+
+
+            } catch (e: Exception) {
+                _state.value = AppState.Error("Error capturing bill: ${e.message}")
+                speak("Error capturing bill. Please try again.")
+            }
+        }
+    }
+
+    // This function should be called when the "capture" command is recognized
+    fun captureForReceiptAnalysis(bitmap: Bitmap) {
+        if (_shouldCaptureForReceiptAnalysis.value) {
+            _shouldCaptureForReceiptAnalysis.value = false
+            speak("Image captured. Analyzing bill.")
+            _state.value = AppState.Loading
+            captureAndAnalyzeReceipt(bitmap)
         }
     }
 

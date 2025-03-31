@@ -67,7 +67,7 @@ data class Review(
 )
 
 @Composable
-fun ShopScreen(onImageCaptured: (bitmap: Bitmap) -> Unit) {
+fun ShopScreen(onImageCaptured: (bitmap: Bitmap) -> Unit, onCaptureReceipt: (bitmap: Bitmap) -> Unit) {
     val context = LocalContext.current
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     var hasCameraPermission by remember {
@@ -98,6 +98,7 @@ fun ShopScreen(onImageCaptured: (bitmap: Bitmap) -> Unit) {
             val bitmap = imageProxyToBitmap(imageProxy)
             if (bitmap != null) {
                 onImageCaptured(bitmap)
+                onCaptureReceipt(bitmap)
             }
         }
     } else {

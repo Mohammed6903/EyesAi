@@ -161,7 +161,12 @@ class MainActivity : ComponentActivity(), RecognitionListener {
                     isVoiceCommandActive = shouldCapture,
                     speak = { text -> viewModel.speak(text) },
                     viewModel = viewModel,
-                    onProductAnalysis = { bitmap -> viewModel.captureForMarketSurvey(bitmap) }
+                    onProductAnalysis = {
+                        bitmap -> viewModel.captureForMarketSurvey(bitmap)
+                    },
+                    onReceiptAnalysis = {
+                        bitmap -> viewModel.captureForReceiptAnalysis(bitmap)
+                    }
                 )
             }
         }

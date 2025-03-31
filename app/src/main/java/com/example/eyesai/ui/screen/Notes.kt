@@ -5,6 +5,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -54,9 +55,20 @@ fun NoteItem(note: String, onDelete: () -> Unit) {
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(text = note, style = MaterialTheme.typography.bodyLarge)
-            IconButton(onClick = onDelete) {
-                Text("Delete")
+            IconButton(
+                onClick = onDelete,
+                modifier = Modifier.padding(start = 8.dp)  // Add padding if necessary for spacing
+            ) {
+                // Wrap the text in a Box to avoid clipping
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Delete",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.align(Alignment.Center)
+                    )
+                }
             }
         }
     }
+
 }
