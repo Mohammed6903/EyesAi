@@ -132,7 +132,7 @@ fun Navigator(
                 enterTransition = { EnterTransition.None },
                 exitTransition = { ExitTransition.None }
             ) {
-                NavigationScreen()
+                NavigationScreen(viewModel)
             }
             composable(
                 AppScreen.Notes.name,

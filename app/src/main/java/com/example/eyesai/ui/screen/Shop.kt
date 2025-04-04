@@ -337,15 +337,15 @@ private fun announceProductDetails(product: Product, context: android.content.Co
 
 private fun detectExpiryDate(text: String, context: android.content.Context) {
     val expiryDate = extractExpiryDate(text)
-    if (expiryDate.isNotEmpty()) {
-        android.os.Handler(android.os.Looper.getMainLooper()).post {
-            android.widget.Toast.makeText(
-                context,
-                "Expiry Date: $expiryDate",
-                android.widget.Toast.LENGTH_SHORT
-            ).show()
-        }
-    }
+//    if (expiryDate.isNotEmpty()) {
+//        android.os.Handler(android.os.Looper.getMainLooper()).post {
+//            android.widget.Toast.makeText(
+//                context,
+//                "Expiry Date: $expiryDate",
+//                android.widget.Toast.LENGTH_SHORT
+//            ).show()
+//        }
+//    }
 }
 
 @OptIn(androidx.camera.core.ExperimentalGetImage::class)

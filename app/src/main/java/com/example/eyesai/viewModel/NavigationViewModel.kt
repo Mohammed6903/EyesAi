@@ -31,6 +31,7 @@ import javax.inject.Inject
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.math.sqrt
+import androidx.core.graphics.scale
 
 @HiltViewModel
 class NavigationViewModel @Inject constructor(
@@ -199,12 +200,7 @@ class NavigationViewModel @Inject constructor(
 
                 val faceRect = faceRects.first()
                 val croppedFace = cropFace(bitmap, faceRect)
-                val scaledFace = Bitmap.createScaledBitmap(
-                    croppedFace,
-                    MODEL_INPUT_SIZE,
-                    MODEL_INPUT_SIZE,
-                    true
-                )
+                val scaledFace = croppedFace.scale(MODEL_INPUT_SIZE, MODEL_INPUT_SIZE)
                 val embeddings = extractEmbeddings(scaledFace)
                 val normalizedEmbeddings = normalizeEmbeddings(embeddings)
                 val faces = withContext(Dispatchers.IO) {
@@ -317,27 +313,6 @@ class NavigationViewModel @Inject constructor(
         )
     }
 
-//    fun processFrame(imageProxy: ImageProxy) {
-//        viewModelScope.launch {
-//            try {
-//                val bitmap = imageProxy.toBitmap()
-//                val rotation = imageProxy.imageInfo.rotationDegrees
-//
-//                // Process detection on the dedicated dispatcher
-//                withContext(detectorDispatcher) {
-//                    if (objectDetectorHelper.objectDetector == null) {
-//                        objectDetectorHelper.setupObjectDetector()
-//                    }
-//                    objectDetectorHelper.detect(bitmap, rotation)
-//                }
-//
-//            } catch (e: Exception) {
-//                Log.e(TAG, "Frame processing error", e)
-//            } finally {
-//                imageProxy.close()
-//            }
-//        }
-//    }
     fun processFrame(imageProxy: ImageProxy) {
         viewModelScope.launch {
             try {

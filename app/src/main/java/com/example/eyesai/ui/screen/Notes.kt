@@ -29,13 +29,13 @@ fun NotesScreen(
             modifier = Modifier.weight(1f)
         ) {
             items(notes) { note ->
-                NoteItem(note = note, onDelete = { viewModel.deleteNote(note) })
+                NoteItem(note = note, onDelete = { viewModel.NotesCommandHandler().deleteNote(note) })
                 Spacer(modifier = Modifier.height(8.dp))
             }
         }
 
         Button(
-            onClick = { viewModel.addNote("New Note") },
+            onClick = { viewModel.NotesCommandHandler().addNote("New Note") },
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("Add Note")

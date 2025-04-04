@@ -19,11 +19,16 @@ import okio.ByteString
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.TimeUnit
 import com.example.eyesai.ui.screen.BarcodeLookupResponse
+import com.google.gson.JsonParser
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import retrofit2.Call
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.GET
 import retrofit2.http.Query
+import java.io.IOException
 
 interface BarcodeLookupService {
     @GET("products")
@@ -189,7 +194,7 @@ sealed class WebSocketState {
 /**
  * WebSocket service for image analysis and market survey
  */
-class WebSocketImageService(private val serverUrl: String = "wss://rbd6wn7l-8000.inc1.devtunnels.ms/ws") {
+class WebSocketImageService(private val serverUrl: String = "wss://kkmkz8wj-8000.inc1.devtunnels.ms/api/v1/product/ws/upload-image") {
     private val TAG = "WebSocketImageService"
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -337,32 +342,63 @@ sealed class ReceiptWebSocketState {
 /**
  * WebSocket service for receipt image analysis
  */
-class ReceiptAnalysisService(private val serverUrl: String = "wss://rbd6wn7l-8000.inc1.devtunnels.ms/receipt") {
+class ReceiptAnalysisService(private val serverUrl: String = "wss://kkmkz8wj-8000.inc1.devtunnels.ms/api/v1/receipt/ws/analyze-receipt") {
     private val TAG = "ReceiptAnalysisService"
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
+        .pingInterval(20, TimeUnit.SECONDS) // Keep connection alive
+        .retryOnConnectionFailure(true)     // Auto-retry on connection failures
         .build()
 
     private var webSocket: WebSocket? = null
     private val gson = Gson()
-    private val coroutineScope = CoroutineScope(Dispatchers.IO)
+    private val coroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob()) // SupervisorJob prevents cancellation propagation
 
     private val _state = MutableStateFlow<ReceiptWebSocketState>(ReceiptWebSocketState.Idle)
     val state: StateFlow<ReceiptWebSocketState> = _state.asStateFlow()
 
+    // Connection timeout variables
+    private var connectionJob: Job? = null
+    private val CONNECTION_TIMEOUT_MS = 15000L  // 15 seconds connection timeout
+
     /**
-     * Connect to the WebSocket server
+     * Connect to the WebSocket server with timeout
      */
     fun connect() {
-        if (_state.value == ReceiptWebSocketState.Connected) {
-            Log.d(TAG, "Already connected to receipt analysis service")
-            return
+        // Check if we're already connected or connecting
+        when (_state.value) {
+            is ReceiptWebSocketState.Connected -> {
+                Log.d(TAG, "Already connected to receipt analysis service")
+                return
+            }
+            is ReceiptWebSocketState.Connecting -> {
+                Log.d(TAG, "Already attempting to connect to receipt analysis service")
+                return
+            }
+            else -> {
+                // Continue with connection attempt
+            }
         }
 
         _state.value = ReceiptWebSocketState.Connecting
+
+        // Cancel any existing connection job
+        connectionJob?.cancel()
+
+        // Start a new timeout job
+        connectionJob = coroutineScope.launch {
+            delay(CONNECTION_TIMEOUT_MS)
+            // If we're still connecting after timeout, mark as error
+            if (_state.value == ReceiptWebSocketState.Connecting) {
+                _state.value = ReceiptWebSocketState.Error("Connection timeout after ${CONNECTION_TIMEOUT_MS/1000} seconds")
+                webSocket?.cancel()
+                webSocket = null
+            }
+        }
+
         val request = Request.Builder()
             .url(serverUrl)
             .build()
@@ -370,16 +406,19 @@ class ReceiptAnalysisService(private val serverUrl: String = "wss://rbd6wn7l-800
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.d(TAG, "Receipt analysis WebSocket connected")
+                connectionJob?.cancel() // Cancel the timeout job
                 _state.value = ReceiptWebSocketState.Connected
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
-                Log.d(TAG, "Received receipt analysis response")
+                Log.d(TAG, "Received receipt analysis response: $text")
                 processResponse(text)
             }
 
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
                 Log.d(TAG, "Received binary message from receipt analysis service")
+                // If we receive binary message, we likely shouldn't process it
+                // But if needed, we could handle binary responses here
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
@@ -393,77 +432,241 @@ class ReceiptAnalysisService(private val serverUrl: String = "wss://rbd6wn7l-800
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                Log.e(TAG, "Receipt analysis WebSocket error: ${t.message}", t)
-                _state.value = ReceiptWebSocketState.Error("Connection error: ${t.message}")
+                val errorMessage = "Receipt analysis WebSocket error: ${t.message}"
+                Log.e(TAG, errorMessage, t)
+
+                // If socket fails while connecting, cancel the timeout job
+                connectionJob?.cancel()
+
+                // Check if we have a response with additional error information
+                val responseError = response?.let {
+                    " HTTP ${it.code}: ${it.message}"
+                } ?: ""
+
+                _state.value = ReceiptWebSocketState.Error("Connection error: ${t.message}$responseError")
             }
         })
     }
 
     /**
-     * Send receipt image for analysis
+     * Send receipt image for analysis with improved error handling
      */
     fun analyzeReceipt(bitmap: Bitmap) {
+        if (bitmap.width <= 0 || bitmap.height <= 0 || bitmap.isRecycled) {
+            _state.value = ReceiptWebSocketState.Error("Invalid image: The image appears to be empty or corrupted")
+            return
+        }
+
         coroutineScope.launch {
             try {
-                if (_state.value != ReceiptWebSocketState.Connected) {
-                    connect()
-                    // Wait for connection to establish
-                    var attempts = 0
-                    while (_state.value != ReceiptWebSocketState.Connected && attempts < 10) {
-                        withContext(Dispatchers.IO) {
-                            Thread.sleep(500)
-                        }
-                        attempts++
-                    }
+                ensureConnected()
 
-                    if (_state.value != ReceiptWebSocketState.Connected) {
-                        _state.value = ReceiptWebSocketState.Error("Failed to connect to receipt analysis server")
-                        return@launch
-                    }
+                if (_state.value !is ReceiptWebSocketState.Connected) {
+                    // If not connected after ensureConnected, there was an error
+                    // The error state has already been set in ensureConnected
+                    return@launch
                 }
 
                 _state.value = ReceiptWebSocketState.Sending
 
                 val imageBytes = withContext(Dispatchers.IO) {
-                    val stream = ByteArrayOutputStream()
-                    bitmap.compress(Bitmap.CompressFormat.JPEG, 90, stream)
-                    stream.toByteArray()
+                    try {
+                        val stream = ByteArrayOutputStream()
+                        val compressed = bitmap.compress(Bitmap.CompressFormat.JPEG, 90, stream)
+                        if (!compressed) {
+                            throw IOException("Failed to compress bitmap")
+                        }
+                        stream.toByteArray()
+                    } catch (e: Exception) {
+                        throw IOException("Failed to convert image: ${e.message}", e)
+                    }
+                }
+
+                if (imageBytes.isEmpty()) {
+                    _state.value = ReceiptWebSocketState.Error("Failed to convert image: Empty byte array")
+                    return@launch
                 }
 
                 val success = webSocket?.send(ByteString.of(*imageBytes))
                 if (success == true) {
                     _state.value = ReceiptWebSocketState.Processing
-                    Log.d(TAG, "Receipt image sent successfully")
+                    Log.d(TAG, "Receipt image sent successfully (${imageBytes.size} bytes)")
+
+                    // Set timeout for processing
+                    launch {
+                        delay(30000) // 30 seconds timeout
+                        if (_state.value == ReceiptWebSocketState.Processing) {
+                            _state.value = ReceiptWebSocketState.Error("Analysis timeout: Server took too long to respond")
+                        }
+                    }
                 } else {
                     _state.value = ReceiptWebSocketState.Error("Failed to send receipt image")
                     Log.e(TAG, "Failed to send receipt image")
                 }
             } catch (e: Exception) {
-                _state.value = ReceiptWebSocketState.Error("Error sending receipt image: ${e.message}")
-                Log.e(TAG, "Error sending receipt image", e)
+                val errorMessage = "Error sending receipt image: ${e.message ?: "Unknown error"}"
+                _state.value = ReceiptWebSocketState.Error(errorMessage)
+                Log.e(TAG, errorMessage, e)
             }
         }
     }
 
     /**
-     * Process the receipt analysis response
+     * Ensures that a connection is established before proceeding
+     */
+    private suspend fun ensureConnected() {
+        if (_state.value !is ReceiptWebSocketState.Connected) {
+            connect()
+
+            // Wait for connection to establish with timeout
+            var timeWaited = 0
+            val checkInterval = 500 // 500ms
+            val maxWaitTime = 10000 // 10 seconds
+
+            while (_state.value !is ReceiptWebSocketState.Connected &&
+                _state.value !is ReceiptWebSocketState.Error &&
+                timeWaited < maxWaitTime) {
+                delay(checkInterval.toLong())
+                timeWaited += checkInterval
+            }
+
+            // Check the final state
+            when (_state.value) {
+                is ReceiptWebSocketState.Connected -> {
+                    // Successfully connected
+                    Log.d(TAG, "Connection established after ${timeWaited}ms")
+                }
+                is ReceiptWebSocketState.Error -> {
+                    // Error occurred during connection (already handled)
+                    Log.d(TAG, "Connection failed with error")
+                }
+                else -> {
+                    // Timed out waiting for connection
+                    _state.value = ReceiptWebSocketState.Error("Timed out while establishing connection")
+                    disconnect()
+                }
+            }
+        }
+    }
+
+    /**
+     * Process the receipt analysis response with improved error handling
      */
     private fun processResponse(text: String) {
+        if (text.isBlank()) {
+            _state.value = ReceiptWebSocketState.Error("Empty response received from server")
+            return
+        }
+
         coroutineScope.launch {
             try {
-                // Check if the response is an error message
-                if (text.contains("\"error\":")) {
-                    val errorResponse = gson.fromJson(text, ErrorResponse::class.java)
-                    _state.value = ReceiptWebSocketState.Error(errorResponse.error)
+                // First, check if the response is valid JSON
+                if (!isValidJson(text)) {
+                    _state.value = ReceiptWebSocketState.Error("Invalid JSON response from server")
                     return@launch
                 }
 
-                val response = gson.fromJson(text, ReceiptAnalysisResponse::class.java)
+                // Check if the response is an error message
+                if (text.contains("\"error\":")) {
+                    val errorResponse = safeJsonParse<ErrorResponse>(text)
+
+                    _state.value = if (errorResponse != null && !errorResponse.error.isNullOrEmpty()) {
+                        ReceiptWebSocketState.Error("Server error: ${errorResponse.error}")
+                    } else {
+                        ReceiptWebSocketState.Error("Unknown server error")
+                    }
+                    return@launch
+                }
+
+                // Try parsing the actual response
+                val response = safeJsonParse<ReceiptAnalysisResponse>(text)
+
+                if (response == null) {
+                    _state.value = ReceiptWebSocketState.Error("Failed to parse response")
+                    return@launch
+                }
+
+                // Validate key response fields
+                val validationError = validateResponseFields(response)
+                if (validationError != null) {
+                    _state.value = ReceiptWebSocketState.Error(validationError)
+                    return@launch
+                }
+
+                // Update state with success
                 _state.value = ReceiptWebSocketState.Success(response)
+
             } catch (e: Exception) {
                 Log.e(TAG, "Error processing receipt analysis response", e)
-                _state.value = ReceiptWebSocketState.Error("Error processing response: ${e.message}")
+                _state.value = ReceiptWebSocketState.Error("Error processing response: ${e.message ?: "Unknown error"}")
             }
+        }
+    }
+
+    /**
+     * Validate that all required fields in the response are present and valid
+     */
+    private fun validateResponseFields(response: ReceiptAnalysisResponse): String? {
+        // Check if receipt_info is null
+        if (response.receipt_info == null) {
+            return "Missing receipt information"
+        }
+
+        // Check merchant info
+        val merchant = response.receipt_info.merchant
+        if (merchant == null) {
+            return "Missing merchant information"
+        }
+
+        // Check payment details
+        val payment = response.receipt_info.payment_details
+        if (payment == null) {
+            return "Missing payment details"
+        }
+
+        // Check if items is null
+        if (response.receipt_info.items == null) {
+            return "Missing receipt items"
+        }
+
+        // Check if receipt_summary is null
+        if (response.receipt_summary == null) {
+            return "Missing receipt summary"
+        }
+
+        // Check if high_value_items is null
+
+        // Check if accessibility_details is null
+        if (response.accessibility_details == null) {
+            return "Missing accessibility details"
+        }
+
+        // All checks passed
+        return null
+    }
+
+    /**
+     * Check if a string is valid JSON
+     */
+    private fun isValidJson(text: String): Boolean {
+        return try {
+            JsonParser.parseString(text)
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Invalid JSON: ${e.message}")
+            false
+        }
+    }
+
+    /**
+     * Safely parse JSON into a specified type with error handling
+     */
+    private inline fun <reified T> safeJsonParse(json: String): T? {
+        return try {
+            gson.fromJson(json, T::class.java)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error parsing JSON to ${T::class.java.simpleName}: ${e.message}", e)
+            null
         }
     }
 
@@ -471,6 +674,7 @@ class ReceiptAnalysisService(private val serverUrl: String = "wss://rbd6wn7l-800
      * Disconnect from the WebSocket server
      */
     fun disconnect() {
+        connectionJob?.cancel()
         webSocket?.close(1000, "Closing receipt analysis connection")
         webSocket = null
         _state.value = ReceiptWebSocketState.Disconnected
@@ -479,40 +683,86 @@ class ReceiptAnalysisService(private val serverUrl: String = "wss://rbd6wn7l-800
     /**
      * Simple error response model
      */
-    private data class ErrorResponse(val error: String)
+    private data class ErrorResponse(val error: String?)
 
     /**
-     * Get a summarized version of the receipt for TTS or display
+     * Get a summarized version of the receipt for TTS or display with null safety
      */
     fun getAccessibleSummary(response: ReceiptAnalysisResponse): String {
-        val merchant = response.receipt_info.merchant
-        val payment = response.receipt_info.payment_details
-        val accessibility = response.accessibility_details
+        val merchant = response.receipt_info?.merchant
+        val payment = response.receipt_info?.payment_details
+        val accessibility = response.accessibility_details ?: return "Receipt information is unavailable."
+        val highValueItems = response.receipt_summary?.high_value_items
 
         return buildString {
-            append("Receipt from ${merchant.name} on ${merchant.timestamp}. ")
-            append("Total amount: ${payment.currency} ${payment.total} paid via ${payment.payment_method}. ")
+            // Merchant Info
+            merchant?.let { m ->
+                if (m.name.isNotEmpty()) {
+                    append("Receipt from ${m.name}")
+                } else {
+                    append("Receipt")
+                }
 
-            // Add brief overview from accessibility section
+                if (m.timestamp.isNotEmpty()) {
+                    append(" on ${m.timestamp}. ")
+                } else {
+                    append(". ")
+                }
+            } ?: append("Receipt. ")
+
+            // Payment Info
+            payment?.let { p ->
+                val currency = p.currency.orEmpty()
+                val total = p.total.takeIf { !it.isNaN() }?.toString() ?: ""
+                val method = p.payment_method.orEmpty()
+
+                if (total.isNotEmpty()) {
+                    append("Total amount: ")
+                    if (currency.isNotEmpty()) append("$currency ")
+                    append("$total")
+                    if (method.isNotEmpty()) append(" paid via $method")
+                    append(". ")
+                }
+            }
+
+            // Accessibility: Brief Overview
             if (accessibility.brief_overview.isNotEmpty()) {
                 append("${accessibility.brief_overview} ")
             }
 
-            // Add high value items
-            val highValueItems = response.receipt_summary.high_value_items
-            if (highValueItems.isNotEmpty()) {
-                append("Highest priced item: ${highValueItems[0].item_name} at ${highValueItems[0].item_total}. ")
-            }
-
-            // Add critical information if available
-            if (accessibility.critical_information.isNotEmpty()) {
+            // Accessibility: Critical Information
+            if (!accessibility.critical_information.isNullOrEmpty()) {
                 append("Important information: ${accessibility.critical_information.joinToString(", ")}. ")
             }
 
-            // Audio indicators if available
+            // Accessibility: Audio Indicators
             accessibility.audio_indicators?.let {
-                append(it.payment_alert)
+                if (it.payment_alert.isNotEmpty()) {
+                    append(it.payment_alert)
+                }
+            }
+
+            // Receipt Summary: High Value Items
+            if (!highValueItems.isNullOrEmpty()) {
+                val topItem = highValueItems.firstOrNull()
+                topItem?.let {
+                    if (it.item_name.isNotEmpty() && !it.item_total.isNaN()) {
+                        append("Highest priced item: ${it.item_name} at ${it.item_total}. ")
+                    }
+                }
+            }
+
+            // If summary is empty, provide a fallback message
+            if (length == 0) {
+                append("Receipt information processed but details are limited.")
             }
         }
+    }
+
+    /**
+     * Reset to idle state
+     */
+    fun reset() {
+        _state.value = ReceiptWebSocketState.Idle
     }
 }
