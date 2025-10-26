@@ -162,7 +162,7 @@ class MainActivity : ComponentActivity(), RecognitionListener {
                     speak = { text -> viewModel.speak(text) },
                     viewModel = viewModel,
                     onProductAnalysis = {
-                        bitmap -> viewModel.ShopCommandHandler().captureForMarketSurvey(bitmap)
+                        bitmap -> viewModel.captureForMarketSurvey(bitmap)
                     },
                     onReceiptAnalysis = {
                         bitmap -> viewModel.captureForReceiptAnalysis(bitmap)

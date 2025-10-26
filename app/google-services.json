@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "983628383243",
+    "project_id": "eyesai-a47c9",
+    "storage_bucket": "eyesai-a47c9.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:983628383243:android:ec5ede552c3a463de0f30e",
+        "android_client_info": {
+          "package_name": "com.example.eyesai"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBR5IcLkIr4EKV8ozsHBkH7B_g8Cl_16lc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -194,7 +194,7 @@ sealed class WebSocketState {
 /**
  * WebSocket service for image analysis and market survey
  */
-class WebSocketImageService(private val serverUrl: String = "wss://kkmkz8wj-8000.inc1.devtunnels.ms/api/v1/product/ws/upload-image") {
+class WebSocketImageService(private val serverUrl: String = "wss://jznpl7x6-8000.inc1.devtunnels.ms/api/v1/product/ws/upload-image") {
     private val TAG = "WebSocketImageService"
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -342,7 +342,7 @@ sealed class ReceiptWebSocketState {
 /**
  * WebSocket service for receipt image analysis
  */
-class ReceiptAnalysisService(private val serverUrl: String = "wss://kkmkz8wj-8000.inc1.devtunnels.ms/api/v1/receipt/ws/analyze-receipt") {
+class ReceiptAnalysisService(private val serverUrl: String = "wss://jznpl7x6-8000.inc1.devtunnels.ms/api/v1/receipt/ws/analyze-receipt") {
     private val TAG = "ReceiptAnalysisService"
 
     private val client = OkHttpClient.Builder()

@@ -4,9 +4,11 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.androidx.room)
+    id("org.jetbrains.kotlin.plugin.serialization") version "1.9.23"
     id("com.google.devtools.ksp")
     id("com.google.dagger.hilt.android")
     id("de.undercouch.download") version "5.4.0"
+   id("com.google.gms.google-services")
 }
 
 val localProps = Properties()
@@ -91,6 +93,9 @@ project.extra.apply {
 apply("download_models.gradle")
 
 dependencies {
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+    implementation(platform("com.google.firebase:firebase-bom:34.4.0"))
+    implementation("com.google.firebase:firebase-ai")
     implementation(libs.hilt.android)
     // The following line is optional, as the core library is included indirectly by camera-camera2
     implementation(libs.androidx.camera.core)
@@ -231,4 +236,6 @@ dependencies {
 
     implementation(libs.generativeai)
     implementation(kotlin("script-runtime"))
+
+    implementation(libs.tasks.genai)
 }
